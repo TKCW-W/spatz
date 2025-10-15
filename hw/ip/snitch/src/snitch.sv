@@ -90,9 +90,9 @@ module snitch import snitch_pkg::*; import riscv_instr::*; #(
   input  logic           acc_pvalid_i,
   output logic           acc_pready_o,
   // Accelerator finished a memory operation
-  input  logic [1:0]    acc_mem_finished_i,
+  input  logic [2:0]    acc_mem_finished_i,
   // Accelerator finished a memory store operation
-  input  logic [1:0]    acc_mem_str_finished_i,
+  input  logic [2:0]    acc_mem_str_finished_i,
   /// TCDM Data Interface
   /// Write transactions do not return data on the `P Channel`
   /// Transactions need to be handled strictly in-order.
@@ -3243,12 +3243,16 @@ module snitch import snitch_pkg::*; import riscv_instr::*; #(
       acc_mem_cnt_d -= 1;
     if (acc_mem_finished_i[1])
       acc_mem_cnt_d -= 1;
+    if (acc_mem_finished_i[2])
+      acc_mem_cnt_d -= 1;    
 
     if (acc_qrsp_i.loadstore && acc_qready_i && acc_qvalid_o && (acc_mem_store || is_fp_store))
       acc_mem_str_cnt_d += 1;
     if (acc_mem_finished_i[0] && acc_mem_str_finished_i[0])
       acc_mem_str_cnt_d -= 1;
     if (acc_mem_finished_i[1] && acc_mem_str_finished_i[1])
+      acc_mem_str_cnt_d -= 1;
+    if (acc_mem_finished_i[2] && acc_mem_str_finished_i[2])
       acc_mem_str_cnt_d -= 1;
   end
 

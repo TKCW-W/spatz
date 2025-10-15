@@ -155,7 +155,7 @@ module spatz_cluster
   localparam int unsigned NrSuperBanks      = NrBanks / BanksPerSuperBank;
 
   function automatic int unsigned get_tcdm_ports(int unsigned core);
-    return spatz_pkg::N_FU + 1;
+    return 2 * spatz_pkg::N_FU + 1;
   endfunction
 
   function automatic int unsigned get_tcdm_port_offs(int unsigned core_idx);

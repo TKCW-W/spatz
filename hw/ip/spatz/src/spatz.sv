@@ -50,8 +50,8 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     input  spatz_mem_rsp_t   [NrMemPorts-1:0] spatz_mem_rsp_i,
     input  logic             [NrMemPorts-1:0] spatz_mem_rsp_valid_i,
     // Memory Finished
-    output logic             [1:0]            spatz_mem_finished_o,
-    output logic             [1:0]            spatz_mem_str_finished_o,
+    output logic             [2:0]            spatz_mem_finished_o,
+    output logic             [2:0]            spatz_mem_str_finished_o,
     // FPU memory interface interface
 `ifdef MEMPOOL_SPATZ
     output logic                              fp_lsu_mem_req_valid_o,
@@ -72,8 +72,8 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
   ////////////////
 
   // Number of ports of the vector register file
-  localparam int unsigned NrWritePorts = 3;
-  localparam int unsigned NrReadPorts  = 6;
+  localparam int unsigned NrWritePorts = 4;//Now two VLSU core each one write port
+  localparam int unsigned NrReadPorts  = 8;//Now two VLSU core each two read port 
 
   /////////////
   // Signals //
@@ -88,9 +88,9 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
   logic     vfu_rsp_valid;
   vfu_rsp_t vfu_rsp;
 
-  logic      vlsu_req_ready;
-  logic      vlsu_rsp_valid;
-  vlsu_rsp_t vlsu_rsp;
+  logic             vlsu_req_ready;
+  logic      [1:0]  vlsu_rsp_valid;
+  vlsu_rsp_t [1:0]  vlsu_rsp;
 
   logic       vsldu_req_ready;
   logic       vsldu_rsp_valid;
@@ -112,8 +112,8 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
   // Did we finish a memory request?
   logic fp_lsu_mem_finished;
   logic fp_lsu_mem_str_finished;
-  logic spatz_mem_finished;
-  logic spatz_mem_str_finished;
+  logic [1:0] spatz_mem_finished;
+  logic [1:0] spatz_mem_str_finished;
   assign spatz_mem_finished_o     = {spatz_mem_finished, fp_lsu_mem_finished};
   assign spatz_mem_str_finished_o = {spatz_mem_str_finished, fp_lsu_mem_str_finished};
 
@@ -306,11 +306,11 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
   // VLSU //
   //////////
 
-  spatz_vlsu #(
+  spatz_vlsu_wrapper #(
     .NrMemPorts      (NrMemPorts      ),
     .spatz_mem_req_t (spatz_mem_req_t ),
     .spatz_mem_rsp_t (spatz_mem_rsp_t )
-  ) i_vlsu (
+  ) i_vlsu_wrapper (
     .clk_i                   (clk_i                                                ),
     .rst_ni                  (rst_ni                                               ),
     // Request
@@ -321,16 +321,16 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     .vlsu_rsp_valid_o        (vlsu_rsp_valid                                       ),
     .vlsu_rsp_o              (vlsu_rsp                                             ),
     // VRF
-    .vrf_waddr_o             (vrf_waddr[VLSU_VD_WD]                                ),
-    .vrf_wdata_o             (vrf_wdata[VLSU_VD_WD]                                ),
-    .vrf_we_o                (sb_we[VLSU_VD_WD]                                    ),
-    .vrf_wbe_o               (vrf_wbe[VLSU_VD_WD]                                  ),
-    .vrf_wvalid_i            (vrf_wvalid[VLSU_VD_WD]                               ),
-    .vrf_raddr_o             (vrf_raddr[VLSU_VD_RD:VLSU_VS2_RD]                    ),
-    .vrf_re_o                (sb_re[VLSU_VD_RD:VLSU_VS2_RD]                        ),
-    .vrf_rdata_i             (vrf_rdata[VLSU_VD_RD:VLSU_VS2_RD]                    ),
-    .vrf_rvalid_i            (vrf_rvalid[VLSU_VD_RD:VLSU_VS2_RD]                   ),
-    .vrf_id_o                ({sb_id[SB_VLSU_VD_WD], sb_id[VLSU_VD_RD:VLSU_VS2_RD]}),
+    .vrf_waddr_o             ({vrf_waddr[VLSU1_VD_WD], vrf_waddr[VLSU0_VD_WD]}      ),
+    .vrf_wdata_o             ({vrf_wdata[VLSU1_VD_WD], vrf_wdata[VLSU0_VD_WD]}      ),
+    .vrf_we_o                ({sb_we[VLSU1_VD_WD], sb_we[VLSU0_VD_WD]}              ),
+    .vrf_wbe_o               ({vrf_wbe[VLSU1_VD_WD], vrf_wbe[VLSU0_VD_WD]}          ),
+    .vrf_wvalid_i            ({vrf_wvalid[VLSU1_VD_WD], vrf_wvalid[VLSU0_VD_WD]}    ),
+    .vrf_raddr_o             ({vrf_raddr[VLSU1_VD_RD:VLSU1_VS2_RD],vrf_raddr[VLSU0_VD_RD:VLSU0_VS2_RD]}),
+    .vrf_re_o                ({sb_re[VLSU1_VD_RD:VLSU1_VS2_RD],sb_re[VLSU0_VD_RD:VLSU0_VS2_RD]} ),
+    .vrf_rdata_i             ({vrf_rdata[VLSU1_VD_RD:VLSU1_VS2_RD], vrf_rdata[VLSU0_VD_RD:VLSU0_VS2_RD]} ),
+    .vrf_rvalid_i            ({vrf_rvalid[VLSU1_VD_RD:VLSU1_VS2_RD], vrf_rvalid[VLSU0_VD_RD:VLSU0_VS2_RD]} ),
+    .vrf_id_o                ({sb_id[SB_VLSU1_VD_WD], sb_id[VLSU1_VD_RD:VLSU1_VS2_RD],sb_id[SB_VLSU0_VD_WD], sb_id[VLSU0_VD_RD:VLSU0_VS2_RD]}),
     // Interface Memory
     .spatz_mem_req_o         (spatz_mem_req_o                                      ),
     .spatz_mem_req_valid_o   (spatz_mem_req_valid_o                                ),

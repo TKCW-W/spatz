@@ -301,14 +301,17 @@ package spatz_pkg;
     VFU_VS2_RD,
     VFU_VS1_RD,
     VFU_VD_RD,
-    VLSU_VS2_RD,
-    VLSU_VD_RD,
+    VLSU0_VS2_RD,
+    VLSU0_VD_RD,
+    VLSU1_VS2_RD,
+    VLSU1_VD_RD,
     VSLDU_VS2_RD
   } vreg_port_rd_e;
 
   typedef enum logic [1:0] {
     VFU_VD_WD,
-    VLSU_VD_WD,
+    VLSU0_VD_WD,
+    VLSU1_VD_WD,
     VSLDU_VD_WD
   } vreg_port_wd_e;
 
@@ -316,11 +319,14 @@ package spatz_pkg;
     SB_VFU_VS2_RD,
     SB_VFU_VS1_RD,
     SB_VFU_VD_RD,
-    SB_VLSU_VS2_RD,
-    SB_VLSU_VD_RD,
+    SB_VLSU0_VS2_RD,
+    SB_VLSU0_VD_RD,
+    SB_VLSU1_VS2_RD,
+    SB_VLSU1_VD_RD,    
     SB_VSLDU_VS2_RD,
     SB_VFU_VD_WD,
-    SB_VLSU_VD_WD,
+    SB_VLSU0_VD_WD,
+    SB_VLSU1_VD_WD,
     SB_VSLDU_VD_WD
   } sb_port_e;
 

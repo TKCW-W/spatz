@@ -56,8 +56,8 @@ module spatz_fpu_sequencer
     output logic             fp_lsu_mem_finished_o,
     output logic             fp_lsu_mem_str_finished_o,
     // Spatz VLSU side channel
-    input  logic             spatz_mem_finished_i,
-    input  logic             spatz_mem_str_finished_i
+    input  logic [1:0]       spatz_mem_finished_i,
+    input  logic [1:0]       spatz_mem_str_finished_i
   );
 
 `include "common_cells/registers.svh"
@@ -641,12 +641,17 @@ module spatz_fpu_sequencer
 
     if ((is_vector_load || is_vector_store) && issue_ready_i && issue_valid_o)
       acc_mem_cnt_d += 1;
-    if (spatz_mem_finished_i)
+    if (spatz_mem_finished_i[0])
+      acc_mem_cnt_d -= 1;
+    
+    if (spatz_mem_finished_i[1])
       acc_mem_cnt_d -= 1;
 
     if (is_vector_store && issue_ready_i && issue_valid_o)
       acc_mem_str_cnt_d += 1;
-    if (spatz_mem_finished_i && spatz_mem_str_finished_i)
+    if (spatz_mem_finished_i[0] && spatz_mem_str_finished_i)
+      acc_mem_str_cnt_d -= 1;
+    if (spatz_mem_finished_i[1] && spatz_mem_str_finished_i)
       acc_mem_str_cnt_d -= 1;
   end
 

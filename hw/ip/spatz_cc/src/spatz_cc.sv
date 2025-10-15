@@ -86,7 +86,7 @@ module spatz_cc
     parameter snitch_pma_pkg::snitch_pma_t                 SnitchPMACfg             = '{default: 0},
     /// Derived parameter *Do not override*
     parameter int                          unsigned        NumSpatzFUs              = (NumSpatzFPUs > NumSpatzIPUs) ? NumSpatzFPUs : NumSpatzIPUs,
-    parameter int                          unsigned        NumMemPortsPerSpatz      = NumSpatzFUs,
+    parameter int                          unsigned        NumMemPortsPerSpatz      = 2 * NumSpatzFUs,//2 VLSU Core Per VLSU Wrapper Per Spatz
     parameter int                          unsigned        TCDMPorts                = RVV ? NumMemPortsPerSpatz + 1 : 1,
     parameter type                                         addr_t                   = logic [AddrWidth-1:0]
   ) (
@@ -152,8 +152,8 @@ module spatz_cc
   drsp_t snitch_drsp_d, snitch_drsp_q, merged_drsp;
 
   // Spatz Memory consistency signals
-  logic [1:0] spatz_mem_finished;
-  logic [1:0] spatz_mem_str_finished;
+  logic [2:0] spatz_mem_finished;
+  logic [2:0] spatz_mem_str_finished;
 
   `SNITCH_VM_TYPEDEF(AddrWidth)
 

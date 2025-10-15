@@ -44,8 +44,8 @@ module spatz_controller
     input  vfu_rsp_t                               vfu_rsp_i,
     // VLSU
     input  logic                                   vlsu_req_ready_i,
-    input  logic                                   vlsu_rsp_valid_i,
-    input  vlsu_rsp_t                              vlsu_rsp_i,
+    input  logic             [1:0]                 vlsu_rsp_valid_i,
+    input  vlsu_rsp_t        [1:0]                 vlsu_rsp_i,
     // VSLDU
     input  logic                                   vsldu_req_ready_i,
     input  logic                                   vsldu_rsp_valid_i,
@@ -270,10 +270,14 @@ module spatz_controller
       wrote_result_narrowing_d[sb_id_i[SB_VFU_VD_WD]] = sb_wrote_result_i[SB_VFU_VD_WD - SB_VFU_VD_WD] ^ narrow_wide_q[sb_id_i[SB_VFU_VD_WD]];
       wrote_result_d[sb_id_i[SB_VFU_VD_WD]]           = sb_wrote_result_i[SB_VFU_VD_WD - SB_VFU_VD_WD] && (!narrow_wide_q[sb_id_i[SB_VFU_VD_WD]] || wrote_result_narrowing_q[sb_id_i[SB_VFU_VD_WD]]);
     end
-    if (sb_enable_o[SB_VLSU_VD_WD]) begin
-      wrote_result_narrowing_d[sb_id_i[SB_VLSU_VD_WD]] = sb_wrote_result_i[SB_VLSU_VD_WD - SB_VFU_VD_WD] ^ narrow_wide_q[sb_id_i[SB_VLSU_VD_WD]];
-      wrote_result_d[sb_id_i[SB_VLSU_VD_WD]]           = sb_wrote_result_i[SB_VLSU_VD_WD - SB_VFU_VD_WD] && (!narrow_wide_q[sb_id_i[SB_VLSU_VD_WD]] || wrote_result_narrowing_q[sb_id_i[SB_VLSU_VD_WD]]);
+    if (sb_enable_o[SB_VLSU0_VD_WD]) begin
+      wrote_result_narrowing_d[sb_id_i[SB_VLSU0_VD_WD]] = sb_wrote_result_i[SB_VLSU0_VD_WD - SB_VFU_VD_WD] ^ narrow_wide_q[sb_id_i[SB_VLSU0_VD_WD]];
+      wrote_result_d[sb_id_i[SB_VLSU0_VD_WD]]           = sb_wrote_result_i[SB_VLSU0_VD_WD - SB_VFU_VD_WD] && (!narrow_wide_q[sb_id_i[SB_VLSU0_VD_WD]] || wrote_result_narrowing_q[sb_id_i[SB_VLSU0_VD_WD]]);
     end
+    if (sb_enable_o[SB_VLSU1_VD_WD]) begin
+      wrote_result_narrowing_d[sb_id_i[SB_VLSU1_VD_WD]] = sb_wrote_result_i[SB_VLSU1_VD_WD - SB_VFU_VD_WD] ^ narrow_wide_q[sb_id_i[SB_VLSU1_VD_WD]];
+      wrote_result_d[sb_id_i[SB_VLSU1_VD_WD]]           = sb_wrote_result_i[SB_VLSU1_VD_WD - SB_VFU_VD_WD] && (!narrow_wide_q[sb_id_i[SB_VLSU1_VD_WD]] || wrote_result_narrowing_q[sb_id_i[SB_VLSU1_VD_WD]]);
+    end    
     if (sb_enable_o[SB_VSLDU_VD_WD]) begin
       wrote_result_narrowing_d[sb_id_i[SB_VSLDU_VD_WD]] = sb_wrote_result_i[SB_VSLDU_VD_WD - SB_VFU_VD_WD] ^ narrow_wide_q[sb_id_i[SB_VSLDU_VD_WD]];
       wrote_result_d[sb_id_i[SB_VSLDU_VD_WD]]           = sb_wrote_result_i[SB_VSLDU_VD_WD - SB_VFU_VD_WD] && (!narrow_wide_q[sb_id_i[SB_VSLDU_VD_WD]] || wrote_result_narrowing_q[sb_id_i[SB_VSLDU_VD_WD]]);
@@ -295,20 +299,36 @@ module spatz_controller
       for (int unsigned insn = 0; insn < NrParallelInstructions; insn++)
         scoreboard_d[insn].deps[vfu_rsp_i.id] = 1'b0;
     end
-    if (vlsu_rsp_valid_i) begin
+    if (vlsu_rsp_valid_i[0]) begin
       for (int unsigned vreg = 0; vreg < NRVREG; vreg++) begin
-        if (read_table_q[vreg].id == vlsu_rsp_i.id && read_table_q[vreg].valid)
+        if (read_table_q[vreg].id == vlsu_rsp_i[0].id && read_table_q[vreg].valid)
           read_table_d[vreg] = '0;
-        if (write_table_q[vreg].id == vlsu_rsp_i.id && write_table_q[vreg].valid)
+        if (write_table_q[vreg].id == vlsu_rsp_i[0].id && write_table_q[vreg].valid)
           write_table_d[vreg] = '0;
       end
 
-      scoreboard_d[vlsu_rsp_i.id]             = '0;
-      narrow_wide_d[vlsu_rsp_i.id]            = 1'b0;
-      wrote_result_narrowing_d[vlsu_rsp_i.id] = 1'b0;
+      scoreboard_d[vlsu_rsp_i[0].id]             = '0;
+      narrow_wide_d[vlsu_rsp_i[0].id]            = 1'b0;
+      wrote_result_narrowing_d[vlsu_rsp_i[0].id] = 1'b0;
       for (int unsigned insn = 0; insn < NrParallelInstructions; insn++)
-        scoreboard_d[insn].deps[vlsu_rsp_i.id] = 1'b0;
+        scoreboard_d[insn].deps[vlsu_rsp_i[0].id] = 1'b0;
     end
+
+    if (vlsu_rsp_valid_i[1]) begin
+      for (int unsigned vreg = 0; vreg < NRVREG; vreg++) begin
+        if (read_table_q[vreg].id == vlsu_rsp_i[1].id && read_table_q[vreg].valid)
+          read_table_d[vreg] = '0;
+        if (write_table_q[vreg].id == vlsu_rsp_i[1].id && write_table_q[vreg].valid)
+          write_table_d[vreg] = '0;
+      end
+
+      scoreboard_d[vlsu_rsp_i[1].id]             = '0;
+      narrow_wide_d[vlsu_rsp_i[1].id]            = 1'b0;
+      wrote_result_narrowing_d[vlsu_rsp_i[1].id] = 1'b0;
+      for (int unsigned insn = 0; insn < NrParallelInstructions; insn++)
+        scoreboard_d[insn].deps[vlsu_rsp_i[1].id] = 1'b0;
+    end
+
     if (vsldu_rsp_valid_i) begin
       for (int unsigned vreg = 0; vreg < NRVREG; vreg++) begin
         if (read_table_q[vreg].id == vsldu_rsp_i.id && read_table_q[vreg].valid)
@@ -460,8 +480,10 @@ module spatz_controller
     // Finished a instruction
     if (vfu_rsp_valid_i)
       running_insn_d[vfu_rsp_i.id] = 1'b0;
-    if (vlsu_rsp_valid_i)
-      running_insn_d[vlsu_rsp_i.id] = 1'b0;
+    if (vlsu_rsp_valid_i[0])
+      running_insn_d[vlsu_rsp_i[0].id] = 1'b0;
+    if (vlsu_rsp_valid_i[1])
+      running_insn_d[vlsu_rsp_i[1].id] = 1'b0;
     if (vsldu_rsp_valid_i)
       running_insn_d[vsldu_rsp_i.id] = 1'b0;
   end: proc_next_insn_id
