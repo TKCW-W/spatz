@@ -25,7 +25,7 @@ def array_to_cstr(a, fmt=float):
         if isinstance(a, torch.Tensor):
             a = a.numpy().flat
         for el in a:
-            out += "{}, ".format(el)
+            out += "{},\n".format(el)
     else:
         for sign, exp, mant in zip(
             a["sign"].numpy().flat,
