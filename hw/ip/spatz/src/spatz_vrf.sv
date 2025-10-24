@@ -54,6 +54,7 @@ module spatz_vrf
     f_bank = addr[$clog2(NrVRFBanks)-1:0] + vreg8;
   endfunction: f_bank
 
+ 
   /////////////
   // Signals //
   /////////////
@@ -152,7 +153,11 @@ module spatz_vrf
         raddr[bank][0]        = f_vreg(raddr_i[VLSU0_VS2_RD]);
         rdata_o[VLSU0_VS2_RD]  = rdata[bank][0];
         rvalid_o[VLSU0_VS2_RD] = 1'b1;
-      end
+      end else if (read_request[bank][VLSU1_VS2_RD]) begin
+        raddr[bank][0]        = f_vreg(raddr_i[VLSU1_VS2_RD]);
+        rdata_o[VLSU1_VS2_RD]  = rdata[bank][0];
+        rvalid_o[VLSU1_VS2_RD] = 1'b1;
+      end 
 
       // Bank read port 1 - Priority: VFU (1) -> VSLDU
       if (read_request[bank][VFU_VS1_RD]) begin
@@ -174,6 +179,10 @@ module spatz_vrf
         raddr[bank][2]       = f_vreg(raddr_i[VLSU0_VD_RD]);
         rdata_o[VLSU0_VD_RD]  = rdata[bank][2];
         rvalid_o[VLSU0_VD_RD] = 1'b1;
+      end else if (read_request[bank][VLSU1_VD_RD]) begin
+        raddr[bank][2]       = f_vreg(raddr_i[VLSU1_VD_RD]);
+        rdata_o[VLSU1_VD_RD]  = rdata[bank][2];
+        rvalid_o[VLSU1_VD_RD] = 1'b1;
       end
     end
   end

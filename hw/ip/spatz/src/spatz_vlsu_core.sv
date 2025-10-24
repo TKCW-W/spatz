@@ -59,7 +59,7 @@ module spatz_vlsu_core
   assign mem_spatz_req = spatz_req_i;
 
   logic mem_spatz_req_valid;
-  assign mem_spatz_req_valid = spatz_req_valid_i;
+  assign mem_spatz_req_valid = spatz_req_valid_i;//updating for new instruction
 
   logic mem_spatz_req_ready;
   assign spatz_req_ready_o = mem_spatz_req_ready;
@@ -69,6 +69,26 @@ module spatz_vlsu_core
   localparam int unsigned MemDataWidth  = ELEN;
   localparam int unsigned MemDataWidthB = MemDataWidth/8;
 
+  //QW: Tracking logic for detecting whether the current instruction is finished, so that mem_operation_valid stays 0 for stale instruction
+  logic processing_q, processing_d;
+  logic mem_spatz_req_valid_q, mem_spatz_req_valid_d;
+  logic  [NrMemPorts-1:0] mem_port_finished_q;
+
+  always_comb begin
+    processing_d = processing_q;
+    mem_spatz_req_valid_d = mem_spatz_req_valid;
+
+    if (mem_spatz_req_valid && !mem_spatz_req_valid_q) begin
+      processing_d = 1'b1;// processing new instruction
+    end
+
+    if (&mem_port_finished_q) begin
+      processing_d = 1'b0;
+    end
+  end
+
+  `FF(processing_q, processing_d, '0)
+  `FF(mem_spatz_req_valid_q, mem_spatz_req_valid_d, '0)
   //////////////
   // Typedefs //
   //////////////
@@ -201,7 +221,7 @@ module spatz_vlsu_core
   vlen_t [NrMemPorts-1:0] mem_counter_delta;
   vlen_t [NrMemPorts-1:0] mem_counter_d;
   vlen_t [NrMemPorts-1:0] mem_counter_q;
-  logic  [NrMemPorts-1:0] mem_port_finished_q;
+  //logic  [NrMemPorts-1:0] mem_port_finished_q;moved forwards
 
   vlen_t [NrMemPorts-1:0] mem_idx_counter_delta;
   vlen_t [NrMemPorts-1:0] mem_idx_counter_d;
@@ -639,7 +659,7 @@ module spatz_vlsu_core
         else if (mem_spatz_req.vl[$clog2(MemDataWidthB) +: $clog2(NrMemPorts)] == port)
           max_elements += mem_spatz_req.vl[$clog2(MemDataWidthB)-1:0];
 
-      mem_operation_valid[port] = mem_spatz_req_valid && (max_elements != mem_counter_q[port]);
+      mem_operation_valid[port] = mem_spatz_req_valid && (max_elements != mem_counter_q[port]) && processing_q;
       mem_operation_last[port]  = mem_operation_valid[port] && ((max_elements - mem_counter_q[port]) <= (mem_is_single_element_operation ? mem_single_element_size : MemDataWidthB));
       mem_counter_load[port]    = mem_spatz_req_ready;
       mem_counter_d[port]       = (mem_spatz_req.vstart >> $clog2(NrMemPorts*MemDataWidthB)) << $clog2(MemDataWidthB);

@@ -90,9 +90,15 @@ end: proc_spatz_req
 //ToDo: OQ chain second vle only if same vl, vsew, unit stride or strided but with same stride value. Check this in OQ
 logic queue_ready;
 spatz_req_t mem_spatz_req;
-spatz_req_t [1:0] core_req;
 logic       mem_spatz_req_valid;
-logic [1:0] mem_spatz_req_ready;//Bit 0 for VLSU0, Bit 1 for VLSU1, asserted if corresponding VLSU_Core finishes all memory requests
+logic [1:0] mem_spatz_req_ready;//Bit 0 for VLSU0, Bit 1 for VLSU1, asserted if corresponding VLSU_Core finishes all memory requests. NOT USED
+
+logic       [1:0] core_busy_q, core_busy_d;
+spatz_req_t [1:0] core_req_q, core_req_d;
+
+//VLSUCore1 Extra delay for the sake of bank conflicts
+spatz_req_t core1_req_qq, core1_req_qqq;
+logic       core1_busy_qq, core1_busy_qqq;
 
 spill_register #(
     .T(spatz_req_t)
@@ -104,48 +110,50 @@ spill_register #(
     .ready_o(spatz_req_ready_o                              ),//ready to accept new inst from controller
     .data_o (mem_spatz_req                                  ),
     .valid_o(mem_spatz_req_valid                            ),//has data for output
-    .ready_i(queue_ready                          ) //downstream ready to handle new instruction, OUTPUT from vlsu_core
+    .ready_i((mem_spatz_req_ready[0]||mem_spatz_req_ready[1])||(core_busy_d[0] == 1 && core_busy_d[1] == 0))//queue_ready                          ) //downstream ready to handle new instruction, OUTPUT from vlsu_core
 );
 
 //ToDO: Save the memory access type in the corresponding VLSU Core?
 
 
-logic [1:0] core_busy_q, core_busy_d;
-spatz_req_t [1:0] core_req_q, core_req_d;
-//logic [1:0] core_req_valid;
-
-
 always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
         core_busy_q <= 2'b00;
-        core_req_q = '{default: '0};
+        core_req_q <= '{default: '0};
+        core1_busy_qq <= 1'b0;
+        core1_req_qq <= '{default: '0};
+        core1_busy_qq <= 1'b0;
+        core1_req_qq <= '{default: '0};       
     end else begin
         core_busy_q <= core_busy_d;
         core_req_q <= core_req_d;
+
+        //Core1 Extra delay
+        core1_req_qq <= core_req_q[1];
+        core1_busy_qq <= core_busy_q[1];
+        core1_req_qqq <= core1_req_qq;
+        core1_busy_qqq <= core1_busy_qq;
     end
 end
 
 always_comb begin
     core_busy_d = core_busy_q;
     core_req_d = core_req_q;
-    //core_req_valid = 2'b00;
 
-    if (spatz_mem_finished_o[0]) begin
+    if (mem_spatz_req_ready[0]) begin//spatz_mem_finished_o[0]) begin
         core_busy_d[0] = 1'b0;
     end 
 
-    if (spatz_mem_finished_o[1]) begin
+    if (mem_spatz_req_ready[1]) begin//spatz_mem_finished_o[1]) begin
         core_busy_d[1] = 1'b0;
     end
 
     if (mem_spatz_req_valid) begin
         if (!core_busy_q[0]) begin
             core_req_d[0] = mem_spatz_req;
-            //core_req_valid[0] = 1'b1;
             core_busy_d[0] = 1'b1;
         end else if (!core_busy_q[1]) begin
             core_req_d[1] = mem_spatz_req;
-            //core_req_valid[1] = 1'b1;
             core_busy_d[1] = 1'b1;
         end
     end
@@ -160,7 +168,7 @@ localparam int unsigned NrCoreMemPorts = NrMemPorts / 2;
 
 //VLSU Core
 spatz_vlsu_core #(
-    .NrMemPorts          (NrMemPorts / 2),
+    .NrMemPorts          (NrCoreMemPorts),
     .spatz_mem_req_t     (spatz_mem_req_t),
     .spatz_mem_rsp_t     (spatz_mem_rsp_t)
 )i_spatz_vlsu_core0(
@@ -196,15 +204,15 @@ spatz_vlsu_core #(
 
 
 spatz_vlsu_core #(
-    .NrMemPorts         (NrMemPorts / 2),
+    .NrMemPorts         (NrCoreMemPorts),
     .spatz_mem_req_t    (spatz_mem_req_t),
     .spatz_mem_rsp_t    (spatz_mem_rsp_t)
 )i_spatz_vlsu_core1(
     .clk_i                     (clk_i),
     .rst_ni                    (rst_ni),
     //Request
-    .spatz_req_i               (core_req_q[1]),
-    .spatz_req_valid_i         (core_busy_q[1]),//core_req_valid[1]),
+    .spatz_req_i               (core1_req_qqq),//core_req_q[1]),core1_req_qqq
+    .spatz_req_valid_i         (core1_busy_qqq),//core_busy_q[1]),//core_req_valid[1]),
     .spatz_req_ready_o         (mem_spatz_req_ready[1]),
     //Response via to Controller
     .vlsu_rsp_valid_o          (vlsu_rsp_valid_o[1]),//indicates instruction finished 

@@ -59,6 +59,81 @@ double fdotp_v64b(const double *a, const double *b, unsigned int avl) {
   return red;
 }
 
+// 64-bit dot-product: a * b (with loop unrolling, LMUL=4)
+double fdotp_v64b_unrolled(const double *a, const double *b, unsigned int avl) {
+  const unsigned int orig_avl = avl;
+  unsigned int vl;
+
+  double red;
+
+  // Track initialization state for both accumulators
+  int first_chunk_init = 1;   // v12 needs initialization
+  int second_chunk_init = 1;  // v24 needs initialization
+
+  // Clean the accumulators
+  asm volatile("vsetvli %0, %1, e64, m4, ta, ma" : "=r"(vl) : "r"(avl));
+  asm volatile("vmv.s.x v0, zero");
+  asm volatile("vmv.v.i v24, 0");  // Initialize v24 to prevent garbage if second chunk never runs
+
+  // Stripmine and accumulate with loop unrolling (factor = 2)
+  do {
+    // ============ FIRST CHUNK ============
+    // Set the vl
+    asm volatile("vsetvli %0, %1, e64, m4, ta, ma" : "=r"(vl) : "r"(avl));
+
+    // Load chunk a and b
+    asm volatile("vle64.v v4, (%0)" ::"r"(a));
+    asm volatile("vle64.v v8, (%0)" ::"r"(b));
+
+    // Multiply and accumulate
+    if (first_chunk_init) {
+      asm volatile("vfmul.vv v12, v4, v8");
+      first_chunk_init = 0;
+    } else {
+      asm volatile("vfmacc.vv v12, v4, v8");
+    }
+
+    // Bump pointers
+    a += vl;
+    b += vl;
+    avl -= vl;
+
+    // ============ SECOND CHUNK (if available) ============
+    if (avl > 0) {
+      // Set the vl
+      asm volatile("vsetvli %0, %1, e64, m4, ta, ma" : "=r"(vl) : "r"(avl));
+
+      // Load chunk a and b
+      asm volatile("vle64.v v16, (%0)" ::"r"(a));
+      asm volatile("vle64.v v20, (%0)" ::"r"(b));
+
+      // Multiply and accumulate
+      if (second_chunk_init) {
+        asm volatile("vfmul.vv v24, v16, v20");
+        second_chunk_init = 0;
+      } else {
+        asm volatile("vfmacc.vv v24, v16, v20");
+      }
+
+      // Bump pointers
+      a += vl;
+      b += vl;
+      avl -= vl;
+    }
+  } while (avl > 0);
+
+  // Combine the two accumulators
+  asm volatile("vsetvli %0, %1, e64, m4, ta, ma" : "=r"(vl) : "r"(orig_avl));
+  asm volatile("vfadd.vv v12, v12, v24");
+
+  // Reduce and return
+  asm volatile("vsetvli zero, %0, e64, m4, ta, ma" ::"r"(orig_avl));
+  asm volatile("vfredusum.vs v0, v12, v0");
+  asm volatile("vfmv.f.s %0, v0" : "=f"(red));
+
+  return red;
+}
+
 // 32-bit dot-product: a * b
 float fdotp_v32b(const float *a, const float *b, unsigned int avl) {
   const unsigned int orig_avl = avl;

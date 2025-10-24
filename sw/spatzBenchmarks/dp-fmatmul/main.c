@@ -135,9 +135,9 @@ int main() {
     long unsigned int utilization =
         performance / (2 * num_cores * SNRT_NFPU_PER_CORE);
 
-    PRINTF("\n----- (%dx%d) dp fmatmul -----\n", gemm_l.M, gemm_l.N);
-    PRINTF("The execution took %u cycles.\n", timer);
-    PRINTF("The performance is %ld OP/1000cycle (%ld%%o utilization).\n",
+    printf("\n----- (%dx%d) dp fmatmul -----\n", gemm_l.M, gemm_l.N);
+    printf("The execution took %u cycles.\n", timer);
+    printf("The performance is %ld OP/1000cycle (%ld%%o utilization).\n",
            performance, utilization);
   }
 
@@ -146,7 +146,7 @@ int main() {
         verify_matrix(c, (const double *)gemm_checksum, gemm_l.M, gemm_l.N);
 
     if (error != 0) {
-      PRINTF("Error core %d: c[%d]=%u\n", cid, error, (int)c[error]);
+      printf("Error core %d: c[%d]=%u\n", cid, error, (int)c[error]);
       return error;
     }
   }
