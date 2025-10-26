@@ -211,8 +211,8 @@ spatz_vlsu_core #(
     .clk_i                     (clk_i),
     .rst_ni                    (rst_ni),
     //Request
-    .spatz_req_i               (core1_req_qqq),//core_req_q[1]),core1_req_qqq
-    .spatz_req_valid_i         (core1_busy_qqq),//core_busy_q[1]),//core_req_valid[1]),
+    .spatz_req_i               (core_req_q[1]),//core_req_q[1]),core1_req_qqq
+    .spatz_req_valid_i         (core_busy_q[1]),//core_busy_q[1]),//core_req_valid[1]),
     .spatz_req_ready_o         (mem_spatz_req_ready[1]),
     //Response via to Controller
     .vlsu_rsp_valid_o          (vlsu_rsp_valid_o[1]),//indicates instruction finished 

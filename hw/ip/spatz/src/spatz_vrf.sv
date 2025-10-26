@@ -69,16 +69,23 @@ module spatz_vrf
   vregfile_addr_t [NrVRFBanks-1:0][NrReadPortsPerBank-1:0] raddr;
   vrf_data_t      [NrVRFBanks-1:0][NrReadPortsPerBank-1:0] rdata;
 
+  //QW: Bank Occupancy Tracking 
+  //logic [NrVRFBanks -1 :0]     bank_occ;
+
   ///////////////////
   // Write Mapping //
   ///////////////////
 
   logic [NrVRFBanks-1:0][NrWritePorts-1:0] write_request;
+
+
+  // Original
+
   always_comb begin: gen_write_request
     for (int bank = 0; bank < NrVRFBanks; bank++) begin
-      for (int port = 0; port < NrWritePorts; port++) begin
-        write_request[bank][port] = we_i[port] && f_bank(waddr_i[port]) == bank;
-      end
+       for (int port = 0; port < NrWritePorts; port++) begin
+         write_request[bank][port] = we_i[port] && f_bank(waddr_i[port]) == bank;
+       end
     end
   end: gen_write_request
 
