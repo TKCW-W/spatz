@@ -46,6 +46,7 @@ git --no-pager diff --check -- \
     ':(exclude)**.patch' \
     ':(exclude)sw/toolchain/**' \
     ':(exclude)sw/riscv-tests/**' \
+    ':(exclude)**/data/**' \
     || EXIT_STATUS=$?
 
 echo "Checking for trailing whitespaces and tabs between HEAD and $base"
@@ -54,6 +55,7 @@ git --no-pager diff --check $base HEAD -- \
     ':(exclude)**.patch' \
     ':(exclude)sw/toolchain/**' \
     ':(exclude)sw/riscv-tests/**' \
+    ':(exclude)**/data/**' \
     || EXIT_STATUS=$?
 
 exit $EXIT_STATUS
