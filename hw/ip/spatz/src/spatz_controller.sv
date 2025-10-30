@@ -54,13 +54,7 @@ module spatz_controller
     input  logic             [NrVregfilePorts-1:0] sb_enable_i,
     input  logic             [NrWritePorts-1:0]    sb_wrote_result_i,
     output logic             [NrVregfilePorts-1:0] sb_enable_o,
-    input  spatz_id_t        [NrVregfilePorts-1:0] sb_id_i,
-
-    // QW
-    input vrf_addr_t         [NrWritePorts-1:0]    waddr_i,
-    input vrf_addr_t         [2:0]                 raddr_i,
-    input logic              [4:0]                 vfu_vs1_i,
-    input logic              [4:0]                 vlsu0_vd_i
+    input  spatz_id_t        [NrVregfilePorts-1:0] sb_id_i
   );
 
 // Include FF
@@ -224,6 +218,20 @@ module spatz_controller
   // Scoreboard //
   ////////////////
 
+  // QW: Add counter to track with VRF Word Granuality the writing progress of VLSU for granting the VFU
+  typedef struct packed {
+    logic [4:0] num_written; //how many words written to VRF, curretly max LMUL is 8, allowing 16 VRFWords
+    logic [1:0] id;          //tracks which instruction we are counting for
+  } counter_t;
+  counter_t vlsu0_count_d, vlsu0_count_q, vlsu1_count_d, vlsu1_count_q, vfu_count_d, vfu_count_q;
+
+  `FF(vlsu0_count_q, vlsu0_count_d, '{default: '0})
+  `FF(vlsu1_count_q, vlsu1_count_d, '{default: '0})
+  `FF(vfu_count_q, vfu_count_d, '{default: '0})
+
+  logic [1:0] current_id_vlsu0, current_id_vlsu1, current_id_vfu;
+  logic [2:0] counter_en_d, counter_en_q; 
+
   // Which instruction is reading and writing to each vector register?
   typedef struct packed {
     spatz_id_t id;
@@ -233,6 +241,7 @@ module spatz_controller
 
   `FF(read_table_q, read_table_d, '{default: '0})
   `FF(write_table_q, write_table_d, '{default: '0})
+  `FF(counter_en_q, counter_en_d, '{default: '0})
 
   // Port scoreboard. Keeps track of the dependencies of this instruction with other instructions
   typedef struct packed {
@@ -255,37 +264,6 @@ module spatz_controller
   logic [NrParallelInstructions-1:0] wrote_result_narrowing_q, wrote_result_narrowing_d;
   `FF(wrote_result_narrowing_q, wrote_result_narrowing_d, '0)
 
-  // QW: Register VRF waddr and wvalid signal because we use last cycle value to grant
-  vrf_addr_t [NrWritePorts-1:0]      vrf_waddr_q, vrf_waddr_d;
-  logic      [NrWritePorts-1:0]      vrf_wvalid_q;
-  `FF(vrf_waddr_q, vrf_waddr_d, '0)
-  `FF(vrf_wvalid_q, sb_wrote_result_i, '0)
-
-  logic        vlsu0_satisfied, vlsu1_satisfied;
-  logic [15:0] read_words_d, read_words_q; //bitvector tracking which words have been read by vfu, supports now only up to LMUL 8, i.e. 16 VRF Words
-  logic [3:0]  word_idx_d, word_idx_q;
-  logic [3:0]  write_idx_d, write_idx_q;
-  `FF(word_idx_q, word_idx_d, '0)
-  `FF(write_idx_q, write_idx_d, '0)
-  `FF(read_words_q, read_words_d, '0)
-
-  logic counter0_en_d, counter0_en_q;
-  `FF(counter0_en_q, counter0_en_d, '0)  
-
-  logic counter1_en_d, counter1_en_q;
-  `FF(counter1_en_q, counter1_en_d, '0)  
-
-  logic current_id_vlsu0_d, current_id_vlsu0_q;
-  logic current_id_vlsu1_d, current_id_vlsu1_q;
-  logic en_0_d, en_0_q, en_1_d, en_1_q;
-  `FF(current_id_vlsu0_q, current_id_vlsu0_d, '0)  
-  `FF(current_id_vlsu1_q, current_id_vlsu1_d, '0)  
-  `FF(en_0_q, en_0_d, '0)  
-  `FF(en_1_q, en_1_d, '0)      
-
-  logic en_d, en_q;
-  `FF(en_q, en_d, '0)
-
   always_comb begin : scoreboard
     // Maintain stated
     read_table_d             = read_table_q;
@@ -293,260 +271,132 @@ module spatz_controller
     scoreboard_d             = scoreboard_q;
     narrow_wide_d            = narrow_wide_q;
     wrote_result_narrowing_d = wrote_result_narrowing_q;
-    word_idx_d               = word_idx_q;
-    write_idx_d              = write_idx_q;
-    read_words_d             = read_words_q;
-    en_d = en_q;
-    vrf_waddr_d = waddr_i;
-    counter0_en_d = counter0_en_q;
-    counter1_en_d = counter1_en_q;
-    current_id_vlsu0_d = current_id_vlsu0_q;
-    current_id_vlsu1_d = current_id_vlsu1_q;
-    en_0_d = en_0_q;
-    en_1_d = en_1_q;
+    counter_en_d             = counter_en_q;
+
+    // QW
+    vlsu0_count_d            = vlsu0_count_q;
+    vlsu1_count_d            = vlsu1_count_q;
+    vfu_count_d              = vfu_count_q;
+
+    current_id_vlsu0 = sb_id_i[SB_VLSU0_VD_WD];
+    current_id_vlsu1 = sb_id_i[SB_VLSU1_VD_WD];
+    current_id_vfu   = sb_id_i[SB_VFU_VD_WD];
 
     // Nobody wrote to the VRF yet
     wrote_result_d = '0;
     sb_enable_o    = '0;
 
-    // QW
-    vlsu0_satisfied = '0;
-    vlsu1_satisfied = '0;
-
-    for (int unsigned port = 0; port < NrVregfilePorts; port++)
+    for (int unsigned port = 0; port < NrVregfilePorts; port++) begin
       // Enable the VRF port if the dependant instructions wrote in the previous cycle
-      // QW: Granting VFU ports later(VD_RD excluded now)
-      if (port != SB_VFU_VS2_RD && port != SB_VFU_VS1_RD && port != SB_VFU_VD_WD) begin
+      // QW: assign vfu grant decision later after counter logic 
+      if (port != SB_VFU_VD_WD) begin//&& port != SB_VFU_VS1_RD && port != SB_VFU_VS2_RD) begin // && port != SB_VFU_VD_RD) begin
         sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
       end
+    end 
 
-    if (!en_0_q && sb_enable_i[SB_VLSU0_VD_WD]) begin
-      current_id_vlsu0_d = sb_id_i[SB_VLSU0_VD_WD];
-      counter0_en_d = 1'b1;
-      en_0_d = 1'b1;
-    end
+    // QW: Initialise or update vlsu0 counter
+    if (sb_enable_o[SB_VLSU0_VD_WD]) begin
 
-    if (!en_1_q && sb_enable_i[SB_VLSU1_VD_WD]) begin
-      current_id_vlsu1_d = sb_id_i[SB_VLSU1_VD_WD];
-      counter1_en_d = 1'b1;
-      en_1_d = 1'b1;
-    end
+      // New instruction?
+      if (vlsu0_count_q.id != current_id_vlsu0 || !counter_en_q[0]) begin
+        vlsu0_count_d.id          = current_id_vlsu0;
+        vlsu0_count_d.num_written = '0;
+        counter_en_d[0] = 1'b1;
+      end
 
-    // QW: Read enable for VFU
-    if (sb_enable_i[SB_VFU_VS1_RD] || sb_enable_i[SB_VFU_VS2_RD]) begin// && sb_enable_i[SB_VFU_VS2_RD]) begin
-
-      if (!sb_enable_i[SB_VFU_VD_RD])begin
-
-        if (scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[sb_id_i[SB_VLSU0_VD_WD]] && counter0_en_q) begin
-          // if (!sb_enable_i[SB_VLSU0_VD_WD] ) begin //new ID at VLSU0, but not written yet
-          //   vlsu0_satisfied = '0;
-          //   vrf_waddr_d[VLSU0_VD_WD] = '0;
-          // end else begin 
-          if (vfu_vs1_i == vlsu0_vd_i) begin // VFU_VS1_RD reading from VLSU0
-            vlsu0_satisfied = waddr_i[VLSU0_VD_WD] > raddr_i[VFU_VS1_RD];
-          end else begin // VFU_VS2_RD reading from VLSU0
-             vlsu0_satisfied = waddr_i[VLSU0_VD_WD] > raddr_i[VFU_VS2_RD];
-          end
-           //((vrf_waddr_q[VLSU0_VD_WD] == raddr_i[VFU_VS1_RD] && vrf_wvalid_q[SB_VLSU0_VD_WD - SB_VFU_VD_WD]) || (vrf_waddr_q[VLSU0_VD_WD] > raddr_i[VFU_VS1_RD])); 
-          //end  
-        end else if (!scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[sb_id_i[SB_VLSU0_VD_WD]] && !counter0_en_q)begin 
-          // if (!sb_enable_i[SB_VLSU0_VD_WD]) begin //new ID at VLSU0, but not written yet
-          //   vlsu0_satisfied = '0;
-          //   vrf_waddr_d[VLSU0_VD_WD] = '0;
-          // end else begin  
-          //   vlsu0_satisfied = 1'b1;
-          // end
-          if (word_idx_q != '0) begin
-            vlsu0_satisfied = 1'b1;
-          end else begin
-            vlsu0_satisfied = 1'b0;
-          end
-
-        end else if (scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[sb_id_i[SB_VLSU0_VD_WD]] && !counter0_en_q) begin
-            vlsu0_satisfied = 1'b0;
-        end else if (!scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[sb_id_i[SB_VLSU0_VD_WD]] && counter0_en_q) begin //old read not finished but new vlsu iteration begins
-          if (word_idx_q != '0) begin
-            vlsu0_satisfied = 1'b1;
-          end else begin
-            vlsu0_satisfied = 1'b0;
-          end
-        end
-
-        if (scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[sb_id_i[SB_VLSU1_VD_WD]] && counter1_en_q) begin
-          // if (!sb_enable_i[SB_VLSU1_VD_WD]) begin //new ID at VLSU1, but not written yet
-          //   vlsu1_satisfied = '0;
-          //   vrf_waddr_d[VLSU1_VD_WD] = '0;
-          // end else begin       
-          if (vfu_vs1_i == vlsu0_vd_i) begin // VFU_VS1_RD reading from VLSU0
-            vlsu1_satisfied = waddr_i[VLSU1_VD_WD] > raddr_i[VFU_VS2_RD];
-          end else begin // VFU_VS2_RD reading from VLSU0
-             vlsu1_satisfied = waddr_i[VLSU1_VD_WD] > raddr_i[VFU_VS1_RD];
-          end
-             //vlsu1_satisfied = waddr_i[VLSU1_VD_WD] > raddr_i[VFU_VS2_RD];//((vrf_waddr_q[VLSU1_VD_WD] == raddr_i[VFU_VS2_RD] && vrf_wvalid_q[SB_VLSU1_VD_WD - SB_VFU_VD_WD]) || (vrf_waddr_q[VLSU1_VD_WD] > raddr_i[VFU_VS2_RD])); 
-          // end       
-        end else if (!scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[sb_id_i[SB_VLSU1_VD_WD]] && !counter1_en_q) begin //VFU could runs too fast read new 30 when new 20 not there yet but also independent on that, this case not allowed to read
-          // if (!sb_enable_i[SB_VLSU1_VD_WD]) begin //new ID at VLSU1, but not written yet
-          //   vlsu1_satisfied = '0;
-          //   vrf_waddr_d[VLSU1_VD_WD] = '0;
-          // end else begin
-          //   vlsu1_satisfied = 1'b1;
-          // end
-          if (word_idx_q != '0) begin
-            vlsu1_satisfied = 1'b1;
-          end else begin
-            vlsu1_satisfied = 1'b0;
-          end
-        end else if (scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[sb_id_i[SB_VLSU1_VD_WD]] && !counter1_en_q) begin
-          vlsu1_satisfied = 1'b0;
-        end else if (!scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[sb_id_i[SB_VLSU1_VD_WD]] && counter1_en_q) begin
-          if (word_idx_q != '0) begin
-            vlsu1_satisfied = 1'b1;
-          end else begin
-            vlsu1_satisfied = 1'b0;
-          end
-        end
-
-        if (!scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[sb_id_i[SB_VLSU0_VD_WD]] && !scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[sb_id_i[SB_VLSU1_VD_WD]] && (word_idx_q == '0 || word_idx_q == 4'h1)) begin
-          sb_enable_o[SB_VFU_VS1_RD] = sb_enable_i[SB_VFU_VS1_RD] && &(~scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].prevent_chaining);
-          sb_enable_o[SB_VFU_VS2_RD] = sb_enable_i[SB_VFU_VS2_RD] && &(~scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].prevent_chaining);
-          sb_enable_o[SB_VFU_VD_RD]  = sb_enable_i[SB_VFU_VD_RD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_RD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_RD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_RD]].prevent_chaining);
-          en_d = 1'b1;
-        end
-
-        if (vlsu0_satisfied && vlsu1_satisfied && !en_q) begin
-          sb_enable_o[SB_VFU_VS1_RD] = !scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].prevent_chaining;
-          sb_enable_o[SB_VFU_VS2_RD] = !scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].prevent_chaining;
-
-          read_words_d[word_idx_q] = 1'b1;
-
-          if (word_idx_q == 4'b1111) begin
-            word_idx_d = 4'b0000;
-            vrf_waddr_d = '0;
-          end else begin
-            word_idx_d = word_idx_q + 1'b1;
-          end
-
-        end
-      end else begin
-        if (scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[sb_id_i[SB_VLSU0_VD_WD]] && counter0_en_q) begin
-          // if (!sb_enable_i[SB_VLSU0_VD_WD] ) begin //new ID at VLSU0, but not written yet
-          //   vlsu0_satisfied = '0;
-          //   vrf_waddr_d[VLSU0_VD_WD] = '0;
-          // end else begin 
-          if (vfu_vs1_i == vlsu0_vd_i) begin // VFU_VS1_RD reading from VLSU0
-            vlsu0_satisfied = waddr_i[VLSU0_VD_WD] > raddr_i[VFU_VS1_RD];
-          end else begin // VFU_VS2_RD reading from VLSU0
-             vlsu0_satisfied = waddr_i[VLSU0_VD_WD] > raddr_i[VFU_VS2_RD];
-          end
-            //vlsu0_satisfied = waddr_i[VLSU0_VD_WD] > raddr_i[VFU_VS1_RD];//((vrf_waddr_q[VLSU0_VD_WD] == raddr_i[VFU_VS1_RD] && vrf_wvalid_q[SB_VLSU0_VD_WD - SB_VFU_VD_WD]) || (vrf_waddr_q[VLSU0_VD_WD] > raddr_i[VFU_VS1_RD])); 
-          //end  
-        end else if (!scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[sb_id_i[SB_VLSU0_VD_WD]] && !counter0_en_q)begin 
-          // if (!sb_enable_i[SB_VLSU0_VD_WD]) begin //new ID at VLSU0, but not written yet
-          //   vlsu0_satisfied = '0;
-          //   vrf_waddr_d[VLSU0_VD_WD] = '0;
-          // end else begin  
-          //   vlsu0_satisfied = 1'b1;
-          // end
-          if (word_idx_q != '0) begin
-            vlsu0_satisfied = 1'b1;
-          end else begin
-            vlsu0_satisfied = 1'b0;
-          end
-
-        end else if (scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[sb_id_i[SB_VLSU0_VD_WD]] && !counter0_en_q) begin
-            vlsu0_satisfied = 1'b0;
-        end else if (!scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[sb_id_i[SB_VLSU0_VD_WD]] && counter0_en_q) begin
-          if (word_idx_q != '0) begin
-            vlsu0_satisfied = 1'b1;
-          end else begin
-            vlsu0_satisfied = 1'b0;
-          end
-        end
-
-        if (scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[sb_id_i[SB_VLSU1_VD_WD]] && counter1_en_q) begin
-          // if (!sb_enable_i[SB_VLSU1_VD_WD]) begin //new ID at VLSU1, but not written yet
-          //   vlsu1_satisfied = '0;
-          //   vrf_waddr_d[VLSU1_VD_WD] = '0;
-          // end else begin       
-          if (vfu_vs1_i == vlsu0_vd_i) begin // VFU_VS1_RD reading from VLSU0
-            vlsu1_satisfied = waddr_i[VLSU1_VD_WD] > raddr_i[VFU_VS2_RD];
-          end else begin // VFU_VS2_RD reading from VLSU0
-             vlsu1_satisfied = waddr_i[VLSU1_VD_WD] > raddr_i[VFU_VS1_RD];
-          end
-             //vlsu1_satisfied = waddr_i[VLSU1_VD_WD] > raddr_i[VFU_VS2_RD];//((vrf_waddr_q[VLSU1_VD_WD] == raddr_i[VFU_VS2_RD] && vrf_wvalid_q[SB_VLSU1_VD_WD - SB_VFU_VD_WD]) || (vrf_waddr_q[VLSU1_VD_WD] > raddr_i[VFU_VS2_RD])); 
-          // end       
-        end else if (!scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[sb_id_i[SB_VLSU1_VD_WD]] && !counter1_en_q) begin //VFU could runs too fast read new 30 when new 20 not there yet but also independent on that, this case not allowed to read
-          // if (!sb_enable_i[SB_VLSU1_VD_WD]) begin //new ID at VLSU1, but not written yet
-          //   vlsu1_satisfied = '0;
-          //   vrf_waddr_d[VLSU1_VD_WD] = '0;
-          // end else begin
-          //   vlsu1_satisfied = 1'b1;
-          // end
-          if (word_idx_q != '0) begin
-            vlsu1_satisfied = 1'b1;
-          end else begin
-            vlsu1_satisfied = 1'b0;
-          end
-        end else if (scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[sb_id_i[SB_VLSU1_VD_WD]] && !counter1_en_q) begin
-          vlsu1_satisfied = 1'b0;
-        end else if (!scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[sb_id_i[SB_VLSU1_VD_WD]] && counter1_en_q) begin
-          if (word_idx_q != '0) begin
-            vlsu1_satisfied = 1'b1;
-          end else begin
-            vlsu1_satisfied = 1'b0;
-          end
-        end
-
-        if (!scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[sb_id_i[SB_VLSU0_VD_WD]] && !scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[sb_id_i[SB_VLSU1_VD_WD]] && word_idx_q == '0) begin
-          sb_enable_o[SB_VFU_VS1_RD] = sb_enable_i[SB_VFU_VS1_RD] && &(~scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].prevent_chaining);
-          sb_enable_o[SB_VFU_VS2_RD] = sb_enable_i[SB_VFU_VS2_RD] && &(~scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].prevent_chaining);
-          sb_enable_o[SB_VFU_VD_RD]  = sb_enable_i[SB_VFU_VD_RD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_RD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_RD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_RD]].prevent_chaining);
-        end
-
-        if (vlsu0_satisfied && vlsu1_satisfied) begin
-          sb_enable_o[SB_VFU_VS1_RD] = !scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].prevent_chaining;
-          sb_enable_o[SB_VFU_VS2_RD] = !scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].prevent_chaining;
-          sb_enable_o[SB_VFU_VD_RD] = !scoreboard_q[sb_id_i[SB_VFU_VD_RD]].prevent_chaining;
-
-          read_words_d[word_idx_q] = 1'b1;
-
-          if (word_idx_q == 4'b1111) begin
-            word_idx_d = 4'b0000;
-          end else begin
-            word_idx_d = word_idx_q + 1'b1;
-          end
-        end
+      // Increment when VLSU0 writes to VRF
+      if (sb_wrote_result_i[SB_VLSU0_VD_WD - SB_VFU_VD_WD]) begin
+        vlsu0_count_d.num_written = vlsu0_count_q.num_written + 1'b1;
       end
     end
 
-    if (sb_enable_i[SB_VFU_VS2_RD]) begin
-      if (en_q && word_idx_q == 4'b1) begin
-        sb_enable_o[SB_VFU_VS2_RD] = sb_enable_i[SB_VFU_VS2_RD] && &(~scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].prevent_chaining);
+    // QW: Initialise or update vlsu1 counter
+    if (sb_enable_o[SB_VLSU1_VD_WD]) begin
+
+      // New instruction?
+      if (vlsu1_count_q.id != current_id_vlsu1 || !counter_en_q[1]) begin
+        vlsu1_count_d.id          = current_id_vlsu1;
+        vlsu1_count_d.num_written = '0;
+        counter_en_d[1] = 1'b1;
+      end
+
+      // Increment when VLSU0 writes to VRF
+      if (sb_wrote_result_i[SB_VLSU1_VD_WD - SB_VFU_VD_WD]) begin
+        vlsu1_count_d.num_written = vlsu1_count_q.num_written + 1'b1;
       end
     end
 
-    if (sb_enable_i[SB_VFU_VD_RD]) begin
-      if (en_q && word_idx_q == 4'b1) begin
-        sb_enable_o[SB_VFU_VD_RD] = sb_enable_i[SB_VFU_VD_RD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_RD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_RD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_RD]].prevent_chaining);
-      end
-    end
-
-    // QW: Write enable for VFU
-    if (sb_enable_i[SB_VFU_VD_WD]) begin
-      if (!scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps[sb_id_i[SB_VLSU0_VD_WD]] && !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps[sb_id_i[SB_VLSU1_VD_WD]] && (write_idx_q == '0 || write_idx_q == 4'b1) && en_q) begin
+    // QW: VFU write enable logic
+    if (|scoreboard_q[current_id_vfu].deps) begin
+      // Ensure VFU and VLSUs are aligned
+      if (scoreboard_q[current_id_vfu].deps[vlsu0_count_q.id] && scoreboard_q[current_id_vfu].deps[vlsu1_count_q.id] && counter_en_d[0] && counter_en_d[1]) begin
+        if(vlsu0_count_q.num_written > vfu_count_q.num_written && vlsu1_count_q.num_written > vfu_count_q.num_written) begin
+          sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && !scoreboard_q[current_id_vfu].prevent_chaining;
+        end
+      end else if (scoreboard_q[current_id_vfu].deps[vlsu0_count_q.id] && !scoreboard_q[current_id_vfu].deps[vlsu1_count_q.id] && counter_en_d[0]) begin //vlsu1 completes
+        if(vlsu0_count_q.num_written > vfu_count_q.num_written) begin
+          sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && !scoreboard_q[current_id_vfu].prevent_chaining;     
+        end
+      end else if (!scoreboard_q[current_id_vfu].deps[vlsu0_count_q.id] && scoreboard_q[current_id_vfu].deps[vlsu1_count_q.id] && counter_en_d[1]) begin //vlsu0 completes
+        if(vlsu1_count_q.num_written > vfu_count_q.num_written) begin
+          sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && !scoreboard_q[current_id_vfu].prevent_chaining;      
+        end
+      end else begin // VFU depends on other instructions, use original grant
         sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining);
-      end else if (read_words_q[write_idx_q] && !en_q) begin
-        if (write_idx_q == 4'b1111) begin
-          write_idx_d = 4'b0000;
-        end else begin
-          write_idx_d = write_idx_q + 1'b1;
-        end
-
-        sb_enable_o[SB_VFU_VD_WD] = !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining;
-        read_words_d[write_idx_q] = 1'b0;
       end
 
-     
+    end else begin // VFU has no dependencies
+      sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining);  
+    end
+
+
+    // // QW: VFU ReadPort enable logic
+    // if (|scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps && counter_en_d[0] && counter_en_d[1]) begin
+    //   // Ensure VFU and VLSUs are aligned
+    //   if (scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[vlsu0_count_q.id] && scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[vlsu1_count_q.id]) begin
+    //     if(vlsu0_count_q.num_written > vfu_count_q.num_written && vlsu1_count_q.num_written > vfu_count_q.num_written) begin
+    //       sb_enable_o[SB_VFU_VS1_RD] = sb_enable_i[SB_VFU_VS1_RD] && !scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].prevent_chaining;
+    //       sb_enable_o[SB_VFU_VS2_RD] = sb_enable_i[SB_VFU_VS2_RD] && !scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].prevent_chaining;
+    //       //sb_enable_o[SB_VFU_VD_RD] = sb_enable_i[SB_VFU_VD_RD] && !scoreboard_q[sb_id_i[SB_VFU_VD_RD]].prevent_chaining;
+    //     end
+    //   end else if (scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[vlsu0_count_q.id] && !scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[vlsu1_count_q.id]) begin //vlsu1 completes
+    //     if(vlsu0_count_q.num_written > vfu_count_q.num_written) begin
+    //       sb_enable_o[SB_VFU_VS1_RD] = sb_enable_i[SB_VFU_VS1_RD] && !scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].prevent_chaining;    
+    //       sb_enable_o[SB_VFU_VS2_RD] = sb_enable_i[SB_VFU_VS2_RD] && !scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].prevent_chaining; 
+    //       //sb_enable_o[SB_VFU_VD_RD] = sb_enable_i[SB_VFU_VD_RD] && !scoreboard_q[sb_id_i[SB_VFU_VD_RD]].prevent_chaining;         
+    //     end
+    //   end else if (!scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[vlsu0_count_q.id] && scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[vlsu1_count_q.id]) begin //vlsu0 completes
+    //     if(vlsu1_count_q.num_written > vfu_count_q.num_written) begin
+    //       sb_enable_o[SB_VFU_VS1_RD] = sb_enable_i[SB_VFU_VS1_RD] && !scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].prevent_chaining;
+    //       sb_enable_o[SB_VFU_VS2_RD] = sb_enable_i[SB_VFU_VS2_RD] && !scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].prevent_chaining; 
+    //       //sb_enable_o[SB_VFU_VD_RD] = sb_enable_i[SB_VFU_VD_RD] && !scoreboard_q[sb_id_i[SB_VFU_VD_RD]].prevent_chaining;          
+    //     end
+    //   end else begin // VFU depends on other instructions, use original grant
+    //     sb_enable_o[SB_VFU_VS1_RD] = sb_enable_i[SB_VFU_VS1_RD] && &(~scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].prevent_chaining);
+    //     sb_enable_o[SB_VFU_VS2_RD] = sb_enable_i[SB_VFU_VS2_RD] && &(~scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].prevent_chaining);
+    //     //sb_enable_o[SB_VFU_VD_RD] = sb_enable_i[SB_VFU_VD_RD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_RD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_RD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_RD]].prevent_chaining);
+    //   end
+    // end else begin // VFU has no dependencies
+    //   sb_enable_o[SB_VFU_VS1_RD] = sb_enable_i[SB_VFU_VS1_RD] && &(~scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].prevent_chaining); 
+    //   sb_enable_o[SB_VFU_VS2_RD] = sb_enable_i[SB_VFU_VS2_RD] && &(~scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].prevent_chaining);
+    //   //sb_enable_o[SB_VFU_VD_RD] = sb_enable_i[SB_VFU_VD_RD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_RD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_RD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_RD]].prevent_chaining); 
+    // end
+
+    // QW: Initialise or update vfu counter
+    // Initialise when the Read Ports track new ID, update only when Write Port track the same ID (new instruction)
+    if (sb_enable_o[SB_VFU_VD_WD]) begin
+
+      // New instruction?
+      if (vfu_count_q.id != sb_id_i[SB_VFU_VS1_RD] || !counter_en_q[2]) begin
+        vfu_count_d.id          = sb_id_i[SB_VFU_VS1_RD];
+        vfu_count_d.num_written = '0;
+        counter_en_d[2]           = 1'b1;
+      end
+
+      // Increment when VFU writes to VRF, only when VFU write port catches up with read port 
+      if (sb_wrote_result_i[SB_VFU_VD_WD - SB_VFU_VD_WD] && sb_id_i[SB_VFU_VS1_RD] == sb_id_i[SB_VFU_VD_WD]) begin
+        vfu_count_d.num_written = vfu_count_q.num_written + 1'b1;
+      end
     end
 
     // Store the decisions
@@ -582,7 +432,14 @@ module spatz_controller
       wrote_result_narrowing_d[vfu_rsp_i.id] = 1'b0;
       for (int unsigned insn = 0; insn < NrParallelInstructions; insn++)
         scoreboard_d[insn].deps[vfu_rsp_i.id] = 1'b0;
+
+      // QW: Reset counter
+      if (vfu_rsp_i.id == vfu_count_q.id) begin
+        vfu_count_d = '{default: '0};
+        counter_en_d[2] = 1'b0;
+      end
     end
+
     if (vlsu_rsp_valid_i[0]) begin
       for (int unsigned vreg = 0; vreg < NRVREG; vreg++) begin
         if (read_table_q[vreg].id == vlsu_rsp_i[0].id && read_table_q[vreg].valid)
@@ -597,8 +454,10 @@ module spatz_controller
       for (int unsigned insn = 0; insn < NrParallelInstructions; insn++)
         scoreboard_d[insn].deps[vlsu_rsp_i[0].id] = 1'b0;
 
-      counter0_en_d = '0;
-      en_0_d = '0;
+      if (vlsu_rsp_i[0].id == vlsu0_count_q.id) begin
+        vlsu0_count_d = '{default: '0};
+        counter_en_d[0] = 1'b0;
+      end
     end
 
     if (vlsu_rsp_valid_i[1]) begin
@@ -615,8 +474,10 @@ module spatz_controller
       for (int unsigned insn = 0; insn < NrParallelInstructions; insn++)
         scoreboard_d[insn].deps[vlsu_rsp_i[1].id] = 1'b0;
 
-      counter1_en_d = '0;
-      en_1_d = '0;
+      if (vlsu_rsp_i[1].id == vlsu1_count_q.id) begin
+        vlsu1_count_d = '{default: '0};
+        counter_en_d[1] = 1'b0;
+      end
     end
 
     if (vsldu_rsp_valid_i) begin
