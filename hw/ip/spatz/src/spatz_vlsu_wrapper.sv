@@ -46,7 +46,9 @@ module spatz_vlsu_wrapper
     input  logic           [NrMemPorts-1:0] spatz_mem_rsp_valid_i,
     // Memory Finished
     output logic           [1:0]                 spatz_mem_finished_o,
-    output logic           [1:0]                 spatz_mem_str_finished_o
+    output logic           [1:0]                 spatz_mem_str_finished_o,
+
+    output logic [4:0]      vlsu0_vd_o
   );
 
 // Include FF
@@ -165,6 +167,8 @@ assign queue_ready = mem_spatz_req_valid && (!core_busy_q[0]||!core_busy_q[1]);
 //Distribute Memory ports
 localparam int unsigned NrCoreMemPorts = NrMemPorts / 2;
 
+assign vlsu0_vd_o = core_req_q[0].vd;
+
 
 //VLSU Core
 spatz_vlsu_core #(
@@ -201,6 +205,7 @@ spatz_vlsu_core #(
     .spatz_mem_finished_o      (spatz_mem_finished_o[0]                          ),//goes to FPU sequencer
     .spatz_mem_str_finished_o  (spatz_mem_str_finished_o[0]                      )
 );
+
 
 
 spatz_vlsu_core #(

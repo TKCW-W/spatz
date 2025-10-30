@@ -79,6 +79,10 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
   // Signals //
   /////////////
 
+  // QW
+  logic [4:0] vfu_vs1;
+  logic [4:0] vlsu0_vd;
+
   // Spatz request
   spatz_req_t spatz_req;
   logic       spatz_req_valid;
@@ -266,12 +270,19 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     .sb_id_i          (sb_id           ),
     .sb_wrote_result_i(vrf_wvalid      ),
     .sb_enable_i      ({sb_we, sb_re}  ),
-    .sb_enable_o      ({vrf_we, vrf_re})
+    .sb_enable_o      ({vrf_we, vrf_re}),
+
+    // QW: Pass the waddr and wvalid from VRF for VFU grant
+    .waddr_i          (vrf_waddr),
+    .raddr_i          (vrf_raddr[VFU_VD_RD:VFU_VS2_RD]),
+    .vfu_vs1_i        (vfu_vs1),
+    .vlsu0_vd_i       (vlsu0_vd)
   );
 
   /////////
   // VFU //
   /////////
+  
 
   spatz_vfu #(
     .FPUImplementation(FPUImplementation)
@@ -299,7 +310,9 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     .vrf_rvalid_i     (vrf_rvalid[VFU_VD_RD:VFU_VS2_RD]                        ),
     .vrf_id_o         ({sb_id[SB_VFU_VD_WD], sb_id[SB_VFU_VD_RD:SB_VFU_VS2_RD]}),
     // FPU side-channel
-    .fpu_status_o     (fpu_status_o                                            )
+    .fpu_status_o     (fpu_status_o                                            ),
+    // QW: VFU VS1 Aceessing register
+    .vfu_vs1_o        (vfu_vs1)
   );
 
   //////////
@@ -338,7 +351,10 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     .spatz_mem_rsp_i         (spatz_mem_rsp_i                                      ),
     .spatz_mem_rsp_valid_i   (spatz_mem_rsp_valid_i                                ),
     .spatz_mem_finished_o    (spatz_mem_finished                                   ),
-    .spatz_mem_str_finished_o(spatz_mem_str_finished                               )
+    .spatz_mem_str_finished_o(spatz_mem_str_finished                               ),
+
+    // QW: VLSU0 VD accessing register 
+    .vlsu0_vd_o              (vlsu0_vd)
   );
 
   ///////////

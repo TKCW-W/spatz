@@ -39,7 +39,10 @@ module spatz_vfu
     input  vrf_data_t  [2:0] vrf_rdata_i,
     input  logic       [2:0] vrf_rvalid_i,
     // FPU side channel
-    output status_t          fpu_status_o
+    output status_t          fpu_status_o,
+
+    //QW
+    output logic [4:0] vfu_vs1_o
   );
 
 // Include FF
@@ -86,6 +89,7 @@ module spatz_vfu
     .ready_i(spatz_req_ready                                )
   );
 
+  assign vfu_vs1_o = spatz_req.vs1;
   ///////////////
   //  Control  //
   ///////////////
