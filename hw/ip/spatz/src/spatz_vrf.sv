@@ -110,8 +110,10 @@ module spatz_vrf
     for (int unsigned bank = 0; bank < NrVRFBanks; bank++) begin
     
     // QW: VRF Merge from Pulp Spatz Main commit 
+    // The commit handles VFU conflict with one signal VLSU
+    // Now we ignore the bank conflict between two VLSUs (VLSU0 still prioritised) but take the second VLSU into account as well. 
 `ifdef BUF_FPU
-      automatic logic write_request_vlsu = write_request[bank][VLSU_VD_WD];
+      automatic logic write_request_vlsu = write_request[bank][VLSU0_VD_WD] || write_request[bank][VLSU1_VD_WD]; 
       w_vlsu_vfu_conflict[bank] = write_request_vlsu & write_request[bank][VFU_VD_WD];
       // Prioritize VFU when VFU buffer usage is high
       // Otherwise VLSU gets the priority
@@ -122,12 +124,18 @@ module spatz_vrf
 `endif
       if (~w_vfu[bank]) begin
         // Prioritize VLSU interfaces
-        if (write_request[bank][VLSU_VD_WD]) begin
-          waddr[bank]          = f_vreg(waddr_i[VLSU_VD_WD]);
-          wdata[bank]          = wdata_i[VLSU_VD_WD];
+        if (write_request[bank][VLSU0_VD_WD]) begin
+          waddr[bank]          = f_vreg(waddr_i[VLSU0_VD_WD]);
+          wdata[bank]          = wdata_i[VLSU0_VD_WD];
           we[bank]             = 1'b1;
-          wbe[bank]            = wbe_i[VLSU_VD_WD];
-          wvalid_o[VLSU_VD_WD] = 1'b1;
+          wbe[bank]            = wbe_i[VLSU0_VD_WD];
+          wvalid_o[VLSU0_VD_WD] = 1'b1;
+        end else if (write_request[bank][VLSU1_VD_WD]) begin
+          waddr[bank]          = f_vreg(waddr_i[VLSU1_VD_WD]);
+          wdata[bank]          = wdata_i[VLSU1_VD_WD];
+          we[bank]             = 1'b1;
+          wbe[bank]            = wbe_i[VLSU1_VD_WD];
+          wvalid_o[VLSU1_VD_WD] = 1'b1;
         end else if (write_request[bank][VFU_VD_WD]) begin
           waddr[bank]         = f_vreg(waddr_i[VFU_VD_WD]);
           wdata[bank]         = wdata_i[VFU_VD_WD];
@@ -149,12 +157,18 @@ module spatz_vrf
           we[bank]            = 1'b1;
           wbe[bank]           = wbe_i[VFU_VD_WD];
           wvalid_o[VFU_VD_WD] = 1'b1;
-        end else if (write_request[bank][VLSU_VD_WD]) begin
-          waddr[bank]          = f_vreg(waddr_i[VLSU_VD_WD]);
-          wdata[bank]          = wdata_i[VLSU_VD_WD];
+        end else if (write_request[bank][VLSU0_VD_WD]) begin
+          waddr[bank]          = f_vreg(waddr_i[VLSU0_VD_WD]);
+          wdata[bank]          = wdata_i[VLSU0_VD_WD];
           we[bank]             = 1'b1;
-          wbe[bank]            = wbe_i[VLSU_VD_WD];
-          wvalid_o[VLSU_VD_WD] = 1'b1;
+          wbe[bank]            = wbe_i[VLSU0_VD_WD];
+          wvalid_o[VLSU0_VD_WD] = 1'b1;
+        end else if (write_request[bank][VLSU1_VD_WD]) begin
+          waddr[bank]           = f_vreg(waddr_i[VLSU1_VD_WD]);
+          wdata[bank]           = wdata_i[VLSU1_VD_WD];
+          we[bank]              = 1'b1;
+          wbe[bank]             = wbe_i[VLSU1_VD_WD];
+          wvalid_o[VLSU1_VD_WD] = 1'b1;
         end else if (write_request[bank][VSLDU_VD_WD]) begin
           waddr[bank]           = f_vreg(waddr_i[VSLDU_VD_WD]);
           wdata[bank]           = wdata_i[VSLDU_VD_WD];
