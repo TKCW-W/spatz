@@ -71,10 +71,8 @@ module spatz_tcdm_interconnect #(
     logic valid;
   } rsp_t;
 
-  // Generate the `bank_select` signal based on the address.
-  // This generates a bank interleaved addressing scheme, where consecutive
-  // addresses are routed to individual banks.
-  
+  // QW: Address Scrambling Logic from TROOP
+
   // Misalignment logic for TCDM to achieve no conflicts within 2x Spatz VLSU interfaces within a core
   // Misalignment pattern : 
   //                        row1 : superbank-1   superbank-2
@@ -94,14 +92,38 @@ module spatz_tcdm_interconnect #(
   //   addr_misaligned = '0;
   //   for (int i = 0; i < NumInp; i++) begin
   //     row[i] = req_i[i].q.addr[ADDRWIDTH-1 : ROWSIZE];
-  //     addr_shift[i] = (row[i][1:0] == 2'b00) || (row[i][1:0] == 2'b11) ? 0 : (((DataWidth * NumOut / 8) / 2) -2);
+  //     addr_shift[i] = (row[i][1:0] == 2'b00) || (row[i][1:0] == 2'b11) ? 0 : (DataWidth * NumOut / 8) / 2;
   //     addr_misaligned[i] = req_i[i].q.addr + addr_shift[i];
   //     addr_misaligned[i][ADDRWIDTH-1 : ROWSIZE] = req_i[i].q.addr[ADDRWIDTH-1 : ROWSIZE];
   //   end
   // end
 
+  // Generate the `bank_select` signal based on the address.
+  // This generates a bank interleaved addressing scheme, where consecutive
+  // addresses are routed to individual banks.
+  // for (genvar i = 0; i < NumInp; i++) begin : gen_bank_select
+  //   assign bank_select[i] = addr_misaligned[i][ByteOffset+:SelWidth]; //addr_misaligned[i][ByteOffset+:SelWidth]; //QW: Now use address scrambling from TROOP req_i[i].q.addr[ByteOffset+:SelWidth];
+  // end
+
+  // QW: XOR Gating to scramble the address 
+  localparam int unsigned ADDRWIDTH = $bits(req_i[0].q.addr);
+  logic [NumInp-1:0] [SelWidth -1:0] bank_scrambled;
+  logic [NumInp-1:0] [ADDRWIDTH-1:0] addr_scrambled;
+
+  always_comb begin
+    bank_scrambled = '0;
+    addr_scrambled = '0;
+
+    for (int i = 0; i < NumInp; i++) begin
+      bank_scrambled[i] = req_i[i].q.addr[6:3] ^ req_i[i].q.addr[10:7] ^ i[3:0];
+      addr_scrambled[i] = req_i[i].q.addr;
+      addr_scrambled[i][ByteOffset+:SelWidth] = bank_scrambled[i];
+    end
+    
+  end
+
   for (genvar i = 0; i < NumInp; i++) begin : gen_bank_select
-    assign bank_select[i] = req_i[i].q.addr[ByteOffset+:SelWidth];//addr_misaligned[i][ByteOffset+:SelWidth];
+    assign bank_select[i] = req_i[i].q.addr[6:3] ^ req_i[i].q.addr[10:7] ^ i[3:0];//addr_scrambled[i][ByteOffset+:SelWidth];
   end
 
   mem_req_chan_t [NumInp-1:0] in_req;
@@ -115,7 +137,7 @@ module spatz_tcdm_interconnect #(
     assign req_q_valid_flat[i] = req_i[i].q_valid;
     assign rsp_o[i].q_ready = rsp_q_ready_flat[i];
     assign in_req[i] = '{
-      addr: req_i[i].q.addr[ByteOffset+SelWidth+:MemAddrWidth],//addr_misaligned[i][ByteOffset+SelWidth+:MemAddrWidth],
+      addr: addr_scrambled[i][ByteOffset+SelWidth+:MemAddrWidth],
       write: req_i[i].q.write,
       amo: req_i[i].q.amo,
       data: req_i[i].q.data,
