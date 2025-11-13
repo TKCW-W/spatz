@@ -60,7 +60,7 @@ module spatz_tcdm_interconnect #(
   `MEM_TYPEDEF_REQ_CHAN_T(mem_req_chan_t, addr_t, data_t, strb_t, user_t);
 
   // Width of the bank select signal.
-  localparam int unsigned SelWidth = cf_math_pkg::idx_width(NumOut);
+  localparam int unsigned SelWidth = cf_math_pkg::idx_width(NumOut); //4
   typedef logic [SelWidth-1:0] select_t;
   select_t [NumInp-1:0] bank_select;
 
@@ -94,14 +94,49 @@ module spatz_tcdm_interconnect #(
   //   addr_misaligned = '0;
   //   for (int i = 0; i < NumInp; i++) begin
   //     row[i] = req_i[i].q.addr[ADDRWIDTH-1 : ROWSIZE];
-  //     addr_shift[i] = (row[i][1:0] == 2'b00) || (row[i][1:0] == 2'b11) ? 0 : (((DataWidth * NumOut / 8) / 2) -2);
+  //     //addr_shift[i] = (row[i][1:0] == 2'b00) || (row[i][1:0] == 2'b01) ? 0 : (DataWidth * NumOut / 8) / 2;
+  //     addr_shift[i] = (row[i] < 10'b0010000000) ? 0 : (DataWidth * NumOut / 8) / 2;
   //     addr_misaligned[i] = req_i[i].q.addr + addr_shift[i];
   //     addr_misaligned[i][ADDRWIDTH-1 : ROWSIZE] = req_i[i].q.addr[ADDRWIDTH-1 : ROWSIZE];
   //   end
   // end
+ 
+  //Reorder Addr bits to realise a bank partioning layout
+  /////// bank 0 - bank 7 ///////// bank 8 - bank 15 ////////
+  ///// CCO_VLSU0 (a[2047:0]) /// CC1_VLSU0 (a[4095:2048]) //
+  ///// CCO_VLSU1 (b[2047:0]) /// CC1_VLSU1 (a[4095:2048]) //
+  ///////////////////////////////////////////////////////////
+
+  logic [NumInp-1:0] is_cc1;
+  logic [NumInp-1:0][3:0] bank_select_par;
+  logic [NumInp-1:0][9:0] row_sel;
+  logic [NumInp-1:0][16:0] addr_reorder;
+
+  always_comb begin
+    is_cc1 = '0;
+    bank_select_par = '0;
+    row_sel = '0;
+    addr_reorder = '0;
+
+    for (int i = 0; i < NumInp; i++) begin
+      is_cc1[i] = req_i[i].q.addr[14]; //0 for cc0, 1 for cc1
+
+      if (!is_cc1[i]) begin 
+        bank_select_par[i][2:0] = req_i[i].q.addr[5:3]; // which of the eight banks in this half
+      end else begin
+        bank_select_par[i] = req_i[i].q.addr[5:3] + 8;
+      end
+
+      row_sel[i] = {req_i[i].q.addr[16:15], req_i[i].q.addr[13:6]};
+
+      addr_reorder[i][2:0] = req_i[i].q.addr[2:0]; // bytes offset as originally
+      addr_reorder[i][6:3] = bank_select_par[i]; // bank select regarding bank partitioning 
+      addr_reorder[i][16:7] = row_sel[i]; // row select: 0-255 for VLSU0 elements, 512-767 for VLSU1 elements
+    end
+  end
 
   for (genvar i = 0; i < NumInp; i++) begin : gen_bank_select
-    assign bank_select[i] = req_i[i].q.addr[ByteOffset+:SelWidth];//addr_misaligned[i][ByteOffset+:SelWidth];
+    assign bank_select[i] = addr_reorder[i][6:3];//req_i[i].q.addr[ByteOffset+:SelWidth];//req_i[i].q.addr[ByteOffset+:SelWidth];//addr_misaligned[i][ByteOffset+:SelWidth];
   end
 
   mem_req_chan_t [NumInp-1:0] in_req;
@@ -115,7 +150,7 @@ module spatz_tcdm_interconnect #(
     assign req_q_valid_flat[i] = req_i[i].q_valid;
     assign rsp_o[i].q_ready = rsp_q_ready_flat[i];
     assign in_req[i] = '{
-      addr: req_i[i].q.addr[ByteOffset+SelWidth+:MemAddrWidth],//addr_misaligned[i][ByteOffset+SelWidth+:MemAddrWidth],
+      addr: addr_reorder[i][ByteOffset+SelWidth+:MemAddrWidth],//req_i[i].q.addr[ByteOffset+SelWidth+:MemAddrWidth],//addr_misaligned[i][ByteOffset+SelWidth+:MemAddrWidth],
       write: req_i[i].q.write,
       amo: req_i[i].q.amo,
       data: req_i[i].q.data,
