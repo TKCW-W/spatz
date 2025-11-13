@@ -62,25 +62,54 @@ def emit_dotp_layer(name="dotp", **kwargs):
 
     m = kwargs["M"]
 
+    ## QW: Padding insertion logic
+    padding_elements = kwargs.get("padding", 0) # Degault to zero for no padding, read from config jason file
+    if padding_elements > 0:
+        half_m = m // 2
+
+        # Split vector A: first half + padding + second half
+        vec_A_cc0 = vec_A[:half_m]
+        vec_A_padding = torch.zeros((padding_elements, 1), dtype=vec_A.dtype)
+        vec_A_cc1 = vec_A[half_m:]
+        vec_A_padded = torch.cat([vec_A_cc0, vec_A_padding, vec_A_cc1])
+
+        # Split vector B: first half + padding + second half
+        vec_B_cc0 = vec_B[:half_m]
+        vec_B_padding = torch.zeros((padding_elements, 1), dtype=vec_B.dtype)
+        vec_B_cc1 = vec_B[half_m:]
+        vec_B_padded = torch.cat([vec_B_cc0, vec_B_padding, vec_B_cc1])
+
+        total_size = m + padding_elements
+    
+    else:
+        vec_A_padded = vec_A
+        vec_B_padded = vec_B
+        total_size = m
+
+
     layer_str = ""
     layer_str += '#include "layer.h"\n\n'
     layer_str += f"dotp_layer {name}_l = {{\n"
-    layer_str += f"\t.M = {m},\n"
+    layer_str += f"\t.M = {m},\n" 
     layer_str += f'\t.dtype = FP{kwargs["prec"]},\n'
     layer_str += "};\n\n\n"
+
+    # NEW: Add padding info
+    if padding_elements > 0:
+        layer_str += f"#define PADDING_ELEMENTS {padding_elements}\n"
 
     ctypes = {"64": "double", "32": "float", "16": "__fp16", "8": "char"}
 
     dtype = ctypes[str(kwargs["prec"])]
     if dtype != "char":
         layer_str += (
-            f'static {dtype} {name}_A_dram [{m}] __attribute__((section(".data"))) = '
-            + array_to_cstr(vec_A)
+            f'static {dtype} {name}_A_dram [{total_size}] __attribute__((section(".data"))) = '
+            + array_to_cstr(vec_A_padded)
             + ";\n\n\n"
         )
         layer_str += (
-            f'static {dtype} {name}_B_dram [{m}] __attribute__((section(".data"))) = '
-            + array_to_cstr(vec_B)
+            f'static {dtype} {name}_B_dram [{total_size}] __attribute__((section(".data"))) = '
+            + array_to_cstr(vec_B_padded)
             + ";\n\n\n"
         )
         layer_str += (
@@ -172,6 +201,7 @@ def main():
         "expand": param["expand"],
         "bits_A": bits_A,
         "bits_B": bits_B,
+        "padding": param["padding"],
     }
 
     emit_header_file("dotp", **kwargs)

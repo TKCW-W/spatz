@@ -40,8 +40,13 @@ static inline int fp_check(const double a, const double b) {
 }
 
 int main() {
-  const unsigned int num_cores = snrt_cluster_core_num(); // change to 1
+  const unsigned int num_cores = 1;// QW: snrt_cluster_core_num(); // change to 1
   const unsigned int cid = snrt_cluster_core_idx();
+
+  // Core 1 exits immediately
+  if (num_cores == 1 && cid != 0) {
+    return 0;
+  }
 
   // Reset timer
   unsigned int timer = (unsigned int)-1;
@@ -63,14 +68,14 @@ int main() {
   }
 
   // Wait for all cores to finish
-  snrt_cluster_hw_barrier();
+  // QW: snrt_cluster_hw_barrier();
 
   // Calculate internal pointers
   double *a_int = a + dim * cid;
   double *b_int = b + dim * cid;
 
   // Wait for all cores to finish
-  snrt_cluster_hw_barrier();
+  // QW: snrt_cluster_hw_barrier();
 
   // Start dump
   if (cid == 0)
@@ -86,7 +91,7 @@ int main() {
   result[cid] = acc;
 
   // Wait for all cores to finish
-  snrt_cluster_hw_barrier();
+  // QW: snrt_cluster_hw_barrier();
 
   // Final reduction
   if (cid == 0) {
@@ -96,7 +101,7 @@ int main() {
   }
 
   // Wait for all cores to finish
-  snrt_cluster_hw_barrier();
+  // QW: snrt_cluster_hw_barrier();
 
   // End dump
   if (cid == 0)
@@ -125,7 +130,7 @@ int main() {
     }
 
   // Wait for core 0 to finish displaying results
-  snrt_cluster_hw_barrier();
+  // Qw: snrt_cluster_hw_barrier();
 
   return 0;
 }

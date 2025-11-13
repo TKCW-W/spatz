@@ -24,8 +24,11 @@
 #include DATAHEADER
 #include "kernel/fdotp.c"
 
+#define PADDING_ELEMENTS 0
+
 double *a;
 double *b;
+double *c;
 double *result;
 
 static inline int fp_check(const double a, const double b) {
@@ -40,13 +43,8 @@ static inline int fp_check(const double a, const double b) {
 }
 
 int main() {
-  const unsigned int num_cores = 1;// QW: snrt_cluster_core_num(); // change to 1
+  const unsigned int num_cores = snrt_cluster_core_num(); // change to 1
   const unsigned int cid = snrt_cluster_core_idx();
-
-  // Core 1 exits immediately
-  if (num_cores == 1 && cid != 0) {
-    return 0;
-  }
 
   // Reset timer
   unsigned int timer = (unsigned int)-1;
@@ -55,27 +53,48 @@ int main() {
 
   // Allocate the matrices
   if (cid == 0) {
-    a = (double *)snrt_l1alloc(dotp_l.M * sizeof(double));
-    b = (double *)snrt_l1alloc(dotp_l.M * sizeof(double));
+    // a = (double *)snrt_l1alloc(dotp_l.M * sizeof(double));
+    // b = (double *)snrt_l1alloc(dotp_l.M * sizeof(double));
+    // result = (double *)snrt_l1alloc(num_cores * sizeof(double));
+    const unsigned int total_elements = dotp_l.M + PADDING_ELEMENTS;
+    a = (double *)snrt_l1alloc(total_elements * sizeof(double));
+    //c = (double *)snrt_l1alloc(4 * sizeof(double));
+    b = (double *)snrt_l1alloc(total_elements * sizeof(double));
     result = (double *)snrt_l1alloc(num_cores * sizeof(double));
   }
 
   // Initialize the matrices
   if (cid == 0) {
-    snrt_dma_start_1d(a, dotp_A_dram, dotp_l.M * sizeof(double));
-    snrt_dma_start_1d(b, dotp_B_dram, dotp_l.M * sizeof(double));
+    // snrt_dma_start_1d(a, dotp_A_dram, dotp_l.M * sizeof(double));
+    // snrt_dma_start_1d(b, dotp_B_dram, dotp_l.M * sizeof(double));
+    // snrt_dma_wait_all();
+    const unsigned int total_elements = dotp_l.M + PADDING_ELEMENTS;
+    snrt_dma_start_1d(a, dotp_A_dram, total_elements * sizeof(double));
+    snrt_dma_start_1d(b, dotp_B_dram, total_elements * sizeof(double));
     snrt_dma_wait_all();
   }
 
   // Wait for all cores to finish
-  // QW: snrt_cluster_hw_barrier();
+  snrt_cluster_hw_barrier();
 
   // Calculate internal pointers
-  double *a_int = a + dim * cid;
-  double *b_int = b + dim * cid;
+  //double *a_int = a + dim * cid;
+  //double *b_int = b + dim * cid; // if cid == 1, shift by padding units 
+
+  // data padding to shift cc1 address for misalignment
+  double *a_int;
+  double *b_int;
+
+  if (cid == 1){
+    a_int = a + dim * cid + PADDING_ELEMENTS;
+    b_int = b + dim * cid + PADDING_ELEMENTS; 
+  } else {
+    a_int = a + dim * cid;
+    b_int = b + dim * cid; 
+  }
 
   // Wait for all cores to finish
-  // QW: snrt_cluster_hw_barrier();
+  snrt_cluster_hw_barrier();
 
   // Start dump
   if (cid == 0)
@@ -91,7 +110,7 @@ int main() {
   result[cid] = acc;
 
   // Wait for all cores to finish
-  // QW: snrt_cluster_hw_barrier();
+  snrt_cluster_hw_barrier();
 
   // Final reduction
   if (cid == 0) {
@@ -101,7 +120,7 @@ int main() {
   }
 
   // Wait for all cores to finish
-  // QW: snrt_cluster_hw_barrier();
+  snrt_cluster_hw_barrier();
 
   // End dump
   if (cid == 0)
@@ -130,7 +149,7 @@ int main() {
     }
 
   // Wait for core 0 to finish displaying results
-  // Qw: snrt_cluster_hw_barrier();
+  snrt_cluster_hw_barrier();
 
   return 0;
 }
