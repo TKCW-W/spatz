@@ -82,8 +82,8 @@ module spatz_tcdm_interconnect #(
   //                        row3 : superbank-6   superbank-5
   //                        row4 : superbank-7   superbank-8
                             
-  // localparam int unsigned ROWSIZE = $clog2(DataWidth * NumOut / 8);
-  // localparam int unsigned ADDRWIDTH = $bits(req_i[0].q.addr);
+  localparam int unsigned ROWSIZE = $clog2(DataWidth * NumOut / 8);
+  localparam int unsigned ADDRWIDTH = $bits(req_i[0].q.addr);
   // addr_t [NumInp-1:0] row;
   // logic [NumInp-1:0] [ROWSIZE-1:0] addr_shift;
   // logic [NumInp-1:0] [ADDRWIDTH-1:0] addr_misaligned;
@@ -109,8 +109,8 @@ module spatz_tcdm_interconnect #(
 
   logic [NumInp-1:0] is_cc1;
   logic [NumInp-1:0][3:0] bank_select_par;
-  logic [NumInp-1:0][9:0] row_sel;
-  logic [NumInp-1:0][16:0] addr_reorder;
+  logic [NumInp-1:0][ADDRWIDTH-ROWSIZE-1:0] row_sel;
+  logic [NumInp-1:0][ADDRWIDTH-1:0] addr_reorder;
 
   always_comb begin
     is_cc1 = '0;
@@ -122,7 +122,7 @@ module spatz_tcdm_interconnect #(
       is_cc1[i] = req_i[i].q.addr[14]; //0 for cc0, 1 for cc1
 
       if (!is_cc1[i]) begin 
-        bank_select_par[i][2:0] = req_i[i].q.addr[5:3]; // which of the eight banks in this half
+        bank_select_par[i] = req_i[i].q.addr[5:3]; // which of the eight banks in this half
       end else begin
         bank_select_par[i] = req_i[i].q.addr[5:3] + 8;
       end
@@ -136,7 +136,7 @@ module spatz_tcdm_interconnect #(
   end
 
   for (genvar i = 0; i < NumInp; i++) begin : gen_bank_select
-    assign bank_select[i] = addr_reorder[i][6:3];//req_i[i].q.addr[ByteOffset+:SelWidth];//req_i[i].q.addr[ByteOffset+:SelWidth];//addr_misaligned[i][ByteOffset+:SelWidth];
+    assign bank_select[i] = addr_reorder[i][ByteOffset+:SelWidth];//req_i[i].q.addr[ByteOffset+:SelWidth];//req_i[i].q.addr[ByteOffset+:SelWidth];//addr_misaligned[i][ByteOffset+:SelWidth];
   end
 
   mem_req_chan_t [NumInp-1:0] in_req;
