@@ -50,13 +50,8 @@ static inline int fp_check(const T *a, const T *b) {
 }
 
 int main() {
-  const unsigned int num_cores = 1;//snrt_cluster_core_num();
+  const unsigned int num_cores = snrt_cluster_core_num();
   const unsigned int cid = snrt_cluster_core_idx();
-
-  // Core 1 exits immediately
-  if (num_cores == 1 && cid != 0) {
-    return 0;
-  }
 
   // Reset timer
   unsigned int timer = (unsigned int)-1;
@@ -77,14 +72,14 @@ int main() {
   }
 
   // Wait for all cores to finish
-  //snrt_cluster_hw_barrier();
+  snrt_cluster_hw_barrier();
 
   // Calculate internal pointers
   T *a_core = a + m_core * cid;
   T *result_core = result + m_core * cid;
 
   // Wait for all cores to finish
-  //snrt_cluster_hw_barrier();
+  snrt_cluster_hw_barrier();
 
   // Start dump
   if (cid == 0)
@@ -103,7 +98,7 @@ int main() {
     gemv_v16b_m4(a_core, b, result_core, gemv_l.M, m_core, gemv_l.N);
 
   // Wait for all cores to finish
-  // snrt_cluster_hw_barrier();
+  snrt_cluster_hw_barrier();
 
   // End dump
   if (cid == 0)
@@ -135,6 +130,6 @@ int main() {
   }
 
   // Wait for core 0 to finish displaying results
- //snrt_cluster_hw_barrier();
+  snrt_cluster_hw_barrier();
   return 0;
 }
