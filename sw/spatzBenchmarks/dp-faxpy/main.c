@@ -40,13 +40,8 @@ static inline int fp_check(const double a, const double b) {
 }
 
 int main() {
-  const unsigned int num_cores = 1;//snrt_cluster_core_num();
+  const unsigned int num_cores = snrt_cluster_core_num();
   const unsigned int cid = snrt_cluster_core_idx();
-
-  // Core 1 exits immediately
-  if (num_cores == 1 && cid != 0) {
-    return 0;
-  }
 
   // Reset timer
   unsigned int timer = (unsigned int)-1;
@@ -70,14 +65,14 @@ int main() {
   }
 
   // Wait for all cores to finish
-  //snrt_cluster_hw_barrier();
+  snrt_cluster_hw_barrier();
 
   // Calculate internal pointers
   double *x_int = x + dim_core * cid;
   double *y_int = y + dim_core * cid;
 
   // Wait for all cores to finish
-  //snrt_cluster_hw_barrier();
+  snrt_cluster_hw_barrier();
 
   // Start dump
   if (cid == 0)
@@ -91,7 +86,7 @@ int main() {
   faxpy_v64b(*a, x_int, y_int, dim_core);
 
   // Wait for all cores to finish
-  //snrt_cluster_hw_barrier();
+  snrt_cluster_hw_barrier();
 
   // End timer and check if new best runtime
   if (cid == 0)
@@ -123,7 +118,7 @@ int main() {
   }
 
   // Wait for core 0 to finish displaying results
-  //snrt_cluster_hw_barrier();
+  snrt_cluster_hw_barrier();
 
   return 0;
 }
