@@ -1701,6 +1701,7 @@ module spatz_decoder
           reset_vstart      = 1'b0;
 
           // Check if CSR access is really destined for Spatz
+          // Add the vleforward extension CSR (yx) 
           case (csr_addr)
             riscv_instr::CSR_VSTART,
             riscv_instr::CSR_VL,
@@ -1708,7 +1709,8 @@ module spatz_decoder
             riscv_instr::CSR_VLENB,
             riscv_instr::CSR_VXSAT,
             riscv_instr::CSR_VXRM,
-            riscv_instr::CSR_VCSR: begin
+            riscv_instr::CSR_VCSR,
+            riscv_instr::CSR_VLEFORWARD: begin
               spatz_req.op_csr.addr = csr_addr;
             end
             default: illegal_instr = 1'b1;
@@ -1717,12 +1719,19 @@ module spatz_decoder
           // Check type of CSR access (read/write)
           unique casez (decoder_req_i.instr)
             riscv_instr::CSRRW,
-            riscv_instr::CSRRWI:
+            riscv_instr::CSRRWI: begin
               if (csr_addr == riscv_instr::CSR_VSTART) begin
                 spatz_req.use_rd              = csr_rd != '0;
                 spatz_req.op_cfg.write_vstart = 1'b1;
               end
 
+              // Enable the VLE forward extension (yx)
+              if (csr_addr == riscv_instr::CSR_VLEFORWARD) begin
+                spatz_req.use_rd              = csr_rd != '0;
+                spatz_req.op_cfg.vleforward = 1'b1;
+              end
+            end
+            
             riscv_instr::CSRRS,
             riscv_instr::CSRRSI:
               if (csr_addr == riscv_instr::CSR_VSTART)

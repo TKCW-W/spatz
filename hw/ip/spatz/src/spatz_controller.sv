@@ -77,10 +77,15 @@ module spatz_controller
   vlen_t  vstart_d, vstart_q;
   vlen_t  vl_d, vl_q;
   vtype_t vtype_d, vtype_q;
+  logic vlefw_en_d, vlefw_en_q; // VLE forward extension enable (yx)
+  logic [31:0] FWVreg_d, FWVreg_q; // VLE forward register (yx)
 
   `FF(vstart_q, vstart_d, '0)
   `FF(vl_q, vl_d, '0)
   `FF(vtype_q, vtype_d, '{vill: 1'b1, vsew: EW_8, vlmul: LMUL_1, default: '0})
+
+  `FF(vlefw_en_q, vlefw_en_d, 1'b0) 
+  `FF(FWVreg_q, FWVreg_d, '0) 
 
   always_comb begin : proc_vcsr
     automatic logic [$clog2(MAXVL):0] vlmax = 0;
@@ -88,6 +93,8 @@ module spatz_controller
     vstart_d = vstart_q;
     vl_d     = vl_q;
     vtype_d  = vtype_q;
+    vlefw_en_d = vlefw_en_q;
+    FWVreg_d = FWVreg_q;
 
     if (spatz_req_valid) begin
       // Reset vstart to zero if we have a new non CSR operation
@@ -103,6 +110,20 @@ module spatz_controller
           vstart_d = vstart_q | vlen_t'(spatz_req.rs1);
         end else if (spatz_req.op_cfg.clear_vstart) begin
           vstart_d = vstart_q & ~vlen_t'(spatz_req.rs1);
+        end
+
+        // Check for instruction to enable VLE forward extension (yx) 
+        // Disable if the same register is written again
+        // Set the forward register from rs1 of CSRRW
+        if (spatz_req.op_cfg.vleforward) begin
+          if (vlefw_en_q && (FWVreg_q == '0)) begin
+            vlefw_en_d = '0;
+          end else begin
+            vlefw_en_d = '1;
+            FWVreg_d = spatz_req.rs1; 
+          end
+        end else begin
+          vlefw_en_d = '0;
         end
       end
 

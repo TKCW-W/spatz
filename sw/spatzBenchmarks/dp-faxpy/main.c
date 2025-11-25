@@ -62,6 +62,7 @@ int main() {
 
     snrt_dma_start_1d(x, axpy_X_dram, dim * sizeof(double));
     snrt_dma_start_1d(y, axpy_Y_dram, dim * sizeof(double));
+    snrt_dma_wait_all();
   }
 
   // Wait for all cores to finish
@@ -73,6 +74,11 @@ int main() {
 
   // Wait for all cores to finish
   snrt_cluster_hw_barrier();
+
+  // Configure the VLE forward extension (yx)
+  // Configure the VLE forward register to use (0-31) 
+  uint32_t vle_vreg = 0x01000000;
+  asm volatile("csrrw x0, 0x7c2, %0" :: "r"(vle_vreg));
 
   // Start dump
   if (cid == 0)

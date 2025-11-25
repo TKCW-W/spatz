@@ -144,12 +144,14 @@ package spatz_pkg;
   // Spatz request //
   ///////////////////
 
+  //add the vleforward as a config (yx) 
   typedef struct packed {
     logic keep_vl;
     logic write_vstart;
     logic set_vstart;
     logic clear_vstart;
     logic reset_vstart;
+    logic vleforward;
   } op_cfg_t;
 
   typedef struct packed {

@@ -775,13 +775,15 @@ module snitch import snitch_pkg::*; import riscv_instr::*; #(
       CSRRW: begin // Atomic Read/Write CSR
         unique case (inst_data_i[31:20])
 `ifdef TARGET_SPATZ
+          //added the VLEFORWARD CSR for vector streaming (yx) 
           riscv_instr::CSR_VSTART,
           riscv_instr::CSR_VL,
           riscv_instr::CSR_VTYPE,
           riscv_instr::CSR_VLENB,
           riscv_instr::CSR_VXSAT,
           riscv_instr::CSR_VXRM,
-          riscv_instr::CSR_VCSR: begin
+          riscv_instr::CSR_VCSR,
+          riscv_instr::CSR_VLEFORWARD: begin
             if (RVV) begin
               write_rd        = 1'b0;
               uses_rd         = rd != 0;
