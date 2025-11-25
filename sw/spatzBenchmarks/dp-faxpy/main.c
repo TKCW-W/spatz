@@ -62,6 +62,7 @@ int main() {
 
     snrt_dma_start_1d(x, axpy_X_dram, dim * sizeof(double));
     snrt_dma_start_1d(y, axpy_Y_dram, dim * sizeof(double));
+    snrt_dma_wait_all(); // Synchronise the cores!
   }
 
   // Wait for all cores to finish
