@@ -29,10 +29,13 @@ double fdotp_v64b(const double *a, const double *b, unsigned int avl) {
   asm volatile("vsetvli %0, %1, e64, m8, ta, ma" : "=r"(vl) : "r"(avl));
   asm volatile("vmv.s.x v0, zero");
 
+  // Set the vl
+  asm volatile("vsetvli %0, %1, e64, m8, ta, ma" : "=r"(vl) : "r"(avl));
+
   // Stripmine and accumulate a partial reduced vector
   do {
-    // Set the vl
-    asm volatile("vsetvli %0, %1, e64, m8, ta, ma" : "=r"(vl) : "r"(avl));
+    // // Set the vl
+    // asm volatile("vsetvli %0, %1, e64, m8, ta, ma" : "=r"(vl) : "r"(avl));
 
     // Load chunk a and b
     asm volatile("vle64.v v8,  (%0)" ::"r"(a));
