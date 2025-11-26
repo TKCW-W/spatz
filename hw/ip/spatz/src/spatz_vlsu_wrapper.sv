@@ -91,17 +91,12 @@ end: proc_spatz_req
 ///////////////////////
 
 //ToDo: OQ chain second vle only if same vl, vsew, unit stride or strided but with same stride value. Check this in OQ
-logic queue_ready;
 spatz_req_t mem_spatz_req;
 logic       mem_spatz_req_valid;
 logic [1:0] mem_spatz_req_ready;//Bit 0 for VLSU0, Bit 1 for VLSU1, asserted if corresponding VLSU_Core finishes all memory requests. NOT USED
 
 logic       [1:0] core_busy_q, core_busy_d;
 spatz_req_t [1:0] core_req_q, core_req_d;
-
-//VLSUCore1 Extra delay for the sake of bank conflicts
-spatz_req_t core1_req_qq, core1_req_qqq;
-logic       core1_busy_qq, core1_busy_qqq;
 
 // spill_register #(
 //     .T(spatz_req_t)
@@ -119,49 +114,26 @@ logic       core1_busy_qq, core1_busy_qqq;
 //ToDO: Save the memory access type in the corresponding VLSU Core?
 
 
-always_ff @(posedge clk_i or negedge rst_ni) begin
-    if (!rst_ni) begin
-        core_busy_q <= 2'b00;
-        core_req_q <= '{default: '0};
-        core1_busy_qq <= 1'b0;
-        core1_req_qq <= '{default: '0};
-        core1_busy_qq <= 1'b0;
-        core1_req_qq <= '{default: '0};       
-    end else begin
-        core_busy_q <= core_busy_d;
-        core_req_q <= core_req_d;
 
-        //Core1 Extra delay
-        core1_req_qq <= core_req_q[1];
-        core1_busy_qq <= core_busy_q[1];
-        core1_req_qqq <= core1_req_qq;
-        core1_busy_qqq <= core1_busy_qq;
-    end
-end
 
-//Operation Queue with Bypass
-///
+// QW: Operation Queue with Bypass
+// Valid spatz req falls through directly to free VLSU. If both VLSUs are busy, push the spatz req into the buffer. 
+// Whenever the buffer is not empty, always dispatch buffer req first. If buffer not empty, meaning downstream busy and still having req to dispatch
+// In this case not ready to access new req from controller, telling it to wait
 spatz_req_t buffer_q;        // Holding buffer for requests when both VLSUs busy
-logic       buffer_valid_q;  // Buffer contains valid request
+logic       buffer_valid_q;  // Buffer contains valid request, not empty
 
-// ----------------------------------------------------------------------------
 // Downstream Ready Computation
-// ----------------------------------------------------------------------------
 logic downstream_ready;
-assign downstream_ready = (mem_spatz_req_ready[0] || mem_spatz_req_ready[1]) ||
-                          (core_busy_d[0] == 1'b1 && core_busy_d[1] == 1'b0);
+assign downstream_ready = (mem_spatz_req_ready[0] || mem_spatz_req_ready[1]) || (core_busy_d[0] == 1'b1 && core_busy_d[1] == 1'b0);
 
-// ----------------------------------------------------------------------------
-// Output Assignments (Combinational)
-// ----------------------------------------------------------------------------
+// Output Assignments 
 // Priority: Buffered request > New request (ensures program order)
 assign mem_spatz_req       = buffer_valid_q ? buffer_q : spatz_req_d;
 assign mem_spatz_req_valid = buffer_valid_q || (spatz_req_valid_i && spatz_req_i.ex_unit == LSU);
 assign spatz_req_ready_o   = !buffer_valid_q;  // Block new requests when buffer occupied
 
-// ----------------------------------------------------------------------------
-// Buffer Control Logic (Combinational)
-// ----------------------------------------------------------------------------
+// Buffer Control Logic 
 logic buffer_fill;   // Load new request into buffer
 logic buffer_drain;  // Buffered request accepted by VLSU
 
@@ -182,33 +154,22 @@ always_comb begin
     end
 end
 
-// ----------------------------------------------------------------------------
-// Buffer Data Register (Sequential)
-// ----------------------------------------------------------------------------
+
+// Buffer Data Register and Buffer Valid Flag
 always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
         buffer_q <= '0;
+        buffer_valid_q <= '0;
     end else if (buffer_fill) begin
         buffer_q <= spatz_req_d;
-    end
-end
-
-// ----------------------------------------------------------------------------
-// Buffer Valid Flag (Sequential)
-// ----------------------------------------------------------------------------
-always_ff @(posedge clk_i or negedge rst_ni) begin
-    if (!rst_ni) begin
+        buffer_valid_q <= 1'b1;
+    end else if (buffer_drain) begin
         buffer_valid_q <= 1'b0;
-    end else begin
-        if (buffer_fill) begin
-            buffer_valid_q <= 1'b1;
-        end else if (buffer_drain) begin
-            buffer_valid_q <= 1'b0;
-        end
     end
 end
-///
 
+
+// Dispatch spatz req to VLSUs
 always_comb begin
     core_busy_d = core_busy_q;
     core_req_d = core_req_q;
@@ -232,14 +193,19 @@ always_comb begin
     end
 end
 
-assign queue_ready = mem_spatz_req_valid && (!core_busy_q[0]||!core_busy_q[1]);
+always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+        core_busy_q <= 2'b00;
+        core_req_q <= '{default: '0};
+    end else begin
+        core_busy_q <= core_busy_d;
+        core_req_q <= core_req_d;
+    end
+end
 
 
 //Distribute Memory ports
 localparam int unsigned NrCoreMemPorts = NrMemPorts / 2;
-
-// assign vlsu0_vd_o = core_req_q[0].vd;
-
 
 //VLSU Core
 spatz_vlsu_core #(

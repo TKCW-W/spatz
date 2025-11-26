@@ -23,10 +23,13 @@ void faxpy_v64b(const double a, const double *x, const double *y,
                 unsigned int avl) {
   unsigned int vl;
 
+  // Set the vl
+  asm volatile("vsetvli %0, %1, e64, m8, ta, ma" : "=r"(vl) : "r"(avl));
+
   // Stripmine and accumulate a partial vector
   do {
-    // Set the vl
-    asm volatile("vsetvli %0, %1, e64, m8, ta, ma" : "=r"(vl) : "r"(avl));
+    // // Set the vl
+    // asm volatile("vsetvli %0, %1, e64, m8, ta, ma" : "=r"(vl) : "r"(avl));
 
     // Load vectors
     asm volatile("vle64.v v0, (%0)" ::"r"(x));
