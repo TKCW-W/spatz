@@ -46,10 +46,13 @@ module spatz_vlsu_wrapper
     input  logic           [NrMemPorts-1:0] spatz_mem_rsp_valid_i,
     // Memory Finished
     output logic           [1:0]                 spatz_mem_finished_o,
-    output logic           [1:0]                 spatz_mem_str_finished_o
+    output logic           [1:0]                 spatz_mem_str_finished_o,
 
     // output logic [4:0]      vlsu0_vd_o,
     // output logic [4:0]      vlsu1_vd_o
+
+    // Assignment decision for the 2 VLSU cores (yx)
+    output vlsu_assignment_t                     vlsu_assignment_o
   );
 
 // Include FF
@@ -139,25 +142,48 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
     end
 end
 
+// Registers to track the destination registers and the assignments of each VLSU core (yx)
+vlsu_assignment_t vlsu_assignment_d, vlsu_assignment_q;
+`FF(vlsu_assignment_q, vlsu_assignment_d, '0)
+assign vlsu_assignment_o = vlsu_assignment_d;
+
 always_comb begin
     core_busy_d = core_busy_q;
     core_req_d = core_req_q;
+    vlsu_assignment_d = vlsu_assignment_q;
+
 
     if (mem_spatz_req_ready[0]) begin//spatz_mem_finished_o[0]) begin
         core_busy_d[0] = 1'b0;
+        vlsu_assignment_d.use_vlsu0 = 1'b0;
+        vlsu_assignment_d.spatz_req_id0 = '0;
+        vlsu_assignment_d.spatz_vd0 = '0;
     end 
 
     if (mem_spatz_req_ready[1]) begin//spatz_mem_finished_o[1]) begin
         core_busy_d[1] = 1'b0;
+        vlsu_assignment_d.use_vlsu1 = 1'b0;
+        vlsu_assignment_d.spatz_req_id1 = '0;
+        vlsu_assignment_d.spatz_vd1 = '0;
     end
 
     if (mem_spatz_req_valid) begin
         if (!core_busy_q[0]) begin
             core_req_d[0] = mem_spatz_req;
             core_busy_d[0] = 1'b1;
+
+            // store the decision for the controller (yx)
+            vlsu_assignment_d.spatz_req_id0 = mem_spatz_req.id;
+            vlsu_assignment_d.use_vlsu0 = 1'b1;
+            vlsu_assignment_d.spatz_vd0 = mem_spatz_req.vd;
         end else if (!core_busy_q[1]) begin
             core_req_d[1] = mem_spatz_req;
             core_busy_d[1] = 1'b1;
+
+            // store the decision for the controller (yx)
+            vlsu_assignment_d.spatz_req_id1 = mem_spatz_req.id;
+            vlsu_assignment_d.use_vlsu1 = 1'b1;
+            vlsu_assignment_d.spatz_vd1 = mem_spatz_req.vd;
         end
     end
 end

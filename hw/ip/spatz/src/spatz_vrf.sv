@@ -21,6 +21,7 @@ module spatz_vrf
     input  vrf_data_t [NrWritePorts-1:0] wdata_i,
     input  logic      [NrWritePorts-1:0] we_i,
     input  vrf_be_t   [NrWritePorts-1:0] wbe_i,
+    //input  logic      [NrWritePorts-1:0] vlefw_write_i, //(yx) 
     output logic      [NrWritePorts-1:0] wvalid_o,
 `ifdef BUF_FPU
     // Signal to track if  result can be buffered or not
@@ -29,6 +30,7 @@ module spatz_vrf
     // Read ports
     input  vrf_addr_t [NrReadPorts-1:0]  raddr_i,
     input  logic      [NrReadPorts-1:0]  re_i,
+    //input  logic      [NrReadPorts-1:0]  vlefw_read_i, //(yx)
     output vrf_data_t [NrReadPorts-1:0]  rdata_o,
     output logic      [NrReadPorts-1:0]  rvalid_o
   );
@@ -80,6 +82,19 @@ module spatz_vrf
 
   //QW: Bank Occupancy Tracking 
   //logic [NrVRFBanks -1 :0]     bank_occ;
+
+  /////////////////
+  // VLE forward //
+  /////////////////
+  vrf_data_t        vlefw_data_d, vlefw_data_q;
+  `FF(vlefw_data_q, vlefw_data_d, '0);
+
+  logic             vlefw_start_d, vlefw_start_q;
+  `FF(vlefw_start_q, vlefw_start_d, 1'b0);
+
+  vregfile_addr_t   vlefw_addr_d, vlefw_addr_q;
+  `FF(vlefw_addr_q, vlefw_addr_d, '0);
+
 
   ///////////////////
   // Write Mapping //

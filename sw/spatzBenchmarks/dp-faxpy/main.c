@@ -77,7 +77,9 @@ int main() {
 
   // Configure the VLE forward extension (yx)
   // Configure the VLE forward register to use (0-31) 
-  uint32_t vle_vreg = 0x01000000;
+  // uint32_t vle_vreg = 0x00000101;
+  uint32_t vle_vreg = 0x00000001;
+
   asm volatile("csrrw x0, 0x7c2, %0" :: "r"(vle_vreg));
 
   // Start dump

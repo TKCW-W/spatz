@@ -775,15 +775,25 @@ module spatz_vfu
     end
   end: vreg_addr_proc
 
+  logic FPU_started_q, FPU_started_d;
+  `FF(FPU_started_q, FPU_started_d, 1'b0); // attempted (yx) 
+
   always_comb begin : operand_req_proc
     vreg_r_req = '0;
     vreg_we    = '0;
     vreg_wbe   = '0;
+    FPU_started_d = FPU_started_q; // attempted (yx)
 
-    if (spatz_req_valid && vl_q < spatz_req.vl)
+    if (spatz_req_valid && vl_q < spatz_req.vl) begin 
       // Request operands
       vreg_r_req = {spatz_req.vd_is_src, spatz_req.use_vs1 && reduction_operand_request[1], spatz_req.use_vs2 && reduction_operand_request[0]};
-
+      if (!FPU_started_q) begin
+        if ((state_q != VFU_RunningFPU) && (|vreg_r_req))
+          vreg_r_req = '0;
+        else if ((state_q == VFU_RunningFPU) && (|vreg_r_req))
+          FPU_started_d = 1'b1; // attempted (yx)
+      end 
+    end
     // Got a new result
     if (&(result_valid | ~pending_results) && !result_tag.reduction) begin
       vreg_we  = !result_tag.wb;

@@ -54,7 +54,12 @@ module spatz_controller
     input  logic             [NrVregfilePorts-1:0] sb_enable_i,
     input  logic             [NrWritePorts-1:0]    sb_wrote_result_i,
     output logic             [NrVregfilePorts-1:0] sb_enable_o,
-    input  spatz_id_t        [NrVregfilePorts-1:0] sb_id_i
+    input  spatz_id_t        [NrVregfilePorts-1:0] sb_id_i,
+    //output logic [NrVregfilePorts-NrWritePorts-1:0] sb_vlefw_read_o,  // VLE forward read enable for VRF (yx)
+    //output logic             [NrWritePorts-1:0]    sb_vlefw_write_o  // VLE forward write enable for VRF (yx)
+    
+    // VLSU assignment decision (yx)
+    input vlsu_assignment_t                       vlsu_assignment_i 
   );
 
 // Include FF
@@ -273,6 +278,17 @@ module spatz_controller
   scoreboard_metadata_t [NrParallelInstructions-1:0] scoreboard_q, scoreboard_d;
   `FF(scoreboard_q, scoreboard_d, '0)
 
+
+  // VLE forware write/read tracking. Is the instruction reading/writing to the special register? (yx)
+  typedef struct packed {
+    spatz_id_t                                    id;
+    logic      [NrWritePorts-1:0]                write;
+    logic      [NrVregfilePorts-NrWritePorts-1:0] read;
+  } vlefw_table_t;
+
+  vlefw_table_t [NrParallelInstructions-1:0] vlefw_table_d, vlefw_table_q;
+  `FF(vlefw_table_q, vlefw_table_d, '{default: '0})
+
   // Did the instruction write to the VRF in the previous cycle?
   logic [NrParallelInstructions-1:0] wrote_result_q, wrote_result_d;
   `FF(wrote_result_q, wrote_result_d, '0)
@@ -302,6 +318,11 @@ module spatz_controller
     current_id_vlsu0 = sb_id_i[SB_VLSU0_VD_WD];
     current_id_vlsu1 = sb_id_i[SB_VLSU1_VD_WD];
     current_id_vfu   = sb_id_i[SB_VFU_VD_WD];
+
+    // YX
+    vlefw_table_d            = vlefw_table_q; //(yx)
+    // sb_vlefw_read_o          = '0; //(yx)
+    // sb_vlefw_write_o         = '0; //(yx)
 
     // Nobody wrote to the VRF yet
     wrote_result_d = '0;
@@ -451,6 +472,7 @@ module spatz_controller
       scoreboard_d[vfu_rsp_i.id]             = '0;
       narrow_wide_d[vfu_rsp_i.id]            = 1'b0;
       wrote_result_narrowing_d[vfu_rsp_i.id] = 1'b0;
+      vlefw_table_d[vfu_rsp_i.id]            = '0; // clear the forward tracking with scoreboard (yx)
       for (int unsigned insn = 0; insn < NrParallelInstructions; insn++)
         scoreboard_d[insn].deps[vfu_rsp_i.id] = 1'b0;
 
@@ -472,6 +494,7 @@ module spatz_controller
       scoreboard_d[vlsu_rsp_i[0].id]             = '0;
       narrow_wide_d[vlsu_rsp_i[0].id]            = 1'b0;
       wrote_result_narrowing_d[vlsu_rsp_i[0].id] = 1'b0;
+      vlefw_table_d[vfu_rsp_i.id]            = '0; // clear the forward tracking with scoreboard (yx)
       for (int unsigned insn = 0; insn < NrParallelInstructions; insn++)
         scoreboard_d[insn].deps[vlsu_rsp_i[0].id] = 1'b0;
 
@@ -492,6 +515,7 @@ module spatz_controller
       scoreboard_d[vlsu_rsp_i[1].id]             = '0;
       narrow_wide_d[vlsu_rsp_i[1].id]            = 1'b0;
       wrote_result_narrowing_d[vlsu_rsp_i[1].id] = 1'b0;
+      vlefw_table_d[vfu_rsp_i.id]            = '0; // clear the forward tracking with scoreboard (yx)
       for (int unsigned insn = 0; insn < NrParallelInstructions; insn++)
         scoreboard_d[insn].deps[vlsu_rsp_i[1].id] = 1'b0;
 
@@ -518,6 +542,40 @@ module spatz_controller
 
     // Initialize the scoreboard metadata if we have a new instruction issued.
     if (spatz_req_valid && spatz_req.ex_unit != CON) begin
+      // Special register for VLE forward extension, check if enabled (yx) 
+      
+      if (vlefw_en_q) begin 
+        // Detect if the operand register matches the forward register (yx)
+        vlefw_table_d[spatz_req.id] = '{id: spatz_req.id, write: '0, read: '0};
+        
+        if (spatz_req.ex_unit == VFU) begin 
+          if ((spatz_req.use_vs1 && FWVreg_q[vreg_t'(spatz_req.vs1)]))
+            vlefw_table_d[spatz_req.id].read[SB_VFU_VS1_RD] = 1'b1;
+          if (spatz_req.use_vs2 && FWVreg_q[vreg_t'(spatz_req.vs2)]) 
+            vlefw_table_d[spatz_req.id].read[SB_VFU_VS2_RD] = 1'b1;
+          if (spatz_req.vd_is_src && FWVreg_q[vreg_t'(spatz_req.vd)]) 
+            vlefw_table_d[spatz_req.id].read[SB_VFU_VD_RD] = 1'b1;
+        end 
+        // case (spatz_req.ex_unit)
+        //   VFU: begin
+        //     if ((spatz_req.use_vs1 && FWVreg_q[vreg_t'(spatz_req.vs1)]))
+        //       vlefw_table_d[spatz_req.id].read[SB_VFU_VS1_RD] = 1'b1;
+        //     if (spatz_req.use_vs2 && FWVreg_q[vreg_t'(spatz_req.vs2)]) 
+        //       vlefw_table_d[spatz_req.id].read[SB_VFU_VS2_RD] = 1'b1;
+        //     if (spatz_req.vd_is_src && FWVreg_q[vreg_t'(spatz_req.vd)]) 
+        //       vlefw_table_d[spatz_req.id].read[SB_VFU_VD_RD] = 1'b1;
+        //   end
+        //   // LSU: begin
+        //   //   if (spatz_req.use_vd && FWVreg_q[vreg_t'(spatz_req.vd)]) 
+        //   //     vlefw_table_d[spatz_req.id].write[SB_VLSU_VD_WD-(NrVregfilePorts-NrWritePorts)] = 1'b1;
+        //   // end
+        //   default: begin 
+        //     vlefw_table_d[spatz_req.id] = '{id: spatz_req.id, write: '0, read: '0};
+        //   end
+        // endcase
+          
+      end 
+
       // RAW hazard
       if (spatz_req.use_vs2) begin
         scoreboard_d[spatz_req.id].deps[write_table_d[spatz_req.vs2].id] |= write_table_d[spatz_req.vs2].valid;
@@ -547,6 +605,22 @@ module spatz_controller
       if (spatz_req.op_arith.is_narrowing || spatz_req.op_arith.widen_vs1 || spatz_req.op_arith.widen_vs2)
         narrow_wide_d[spatz_req.id] = 1'b1;
     end
+
+    // Handle the VLSU selections, separate the enable signals for stream for VLSU (yx) 
+    if (vlsu_assignment_i.use_vlsu0 || vlsu_assignment_i.use_vlsu1) begin
+      if (vlsu_assignment_i.use_vlsu0) begin 
+        if (vlsu_assignment_i.spatz_vd0 && FWVreg_q[vreg_t'(vlsu_assignment_i.spatz_vd0)]) 
+          vlefw_table_d[vlsu_assignment_i.spatz_req_id0].write[SB_VLSU0_VD_WD-(NrVregfilePorts-NrWritePorts)] = 1'b1;
+      end else if (vlsu_assignment_i.use_vlsu1) begin 
+        if (vlsu_assignment_i.spatz_vd1 && FWVreg_q[vreg_t'(vlsu_assignment_i.spatz_vd1)]) 
+          vlefw_table_d[vlsu_assignment_i.spatz_req_id1].write[SB_VLSU1_VD_WD-(NrVregfilePorts-NrWritePorts)] = 1'b1; 
+      end else begin 
+        vlefw_table_d[vlsu_assignment_i.spatz_req_id0].write[SB_VLSU0_VD_WD-(NrVregfilePorts-NrWritePorts)] = 1'b0; 
+        vlefw_table_d[vlsu_assignment_i.spatz_req_id1].write[SB_VLSU1_VD_WD-(NrVregfilePorts-NrWritePorts)] = 1'b0;
+      end
+          
+    end
+    
 
     // An instruction never depends on itself
     for (int insn = 0; insn < NrParallelInstructions; insn++)

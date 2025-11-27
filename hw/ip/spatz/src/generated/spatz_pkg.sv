@@ -144,6 +144,16 @@ package spatz_pkg;
   // Spatz request //
   ///////////////////
 
+  //vlsu assignment decision (yx)
+  typedef struct packed {
+    logic        use_vlsu0;
+    logic [1:0]  spatz_req_id0;
+    vreg_t spatz_vd0;
+    logic       use_vlsu1;
+    logic [1:0] spatz_req_id1;
+    vreg_t spatz_vd1;
+  } vlsu_assignment_t;
+
   //add the vleforward as a config (yx) 
   typedef struct packed {
     logic keep_vl;
