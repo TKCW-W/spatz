@@ -649,9 +649,9 @@ module spatz_fpu_sequencer
 
     if (is_vector_store && issue_ready_i && issue_valid_o)
       acc_mem_str_cnt_d += 1;
-    if (spatz_mem_finished_i[0] && spatz_mem_str_finished_i)
+    if (spatz_mem_finished_i[0] && spatz_mem_str_finished_i[0])
       acc_mem_str_cnt_d -= 1;
-    if (spatz_mem_finished_i[1] && spatz_mem_str_finished_i)
+    if (spatz_mem_finished_i[1] && spatz_mem_str_finished_i[1])
       acc_mem_str_cnt_d -= 1;
   end
 
