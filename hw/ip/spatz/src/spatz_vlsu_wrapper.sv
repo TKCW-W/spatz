@@ -46,7 +46,7 @@ module spatz_vlsu_wrapper
     input  logic           [NrMemPorts-1:0] spatz_mem_rsp_valid_i,
     // Memory Finished
     output logic           [1:0]                 spatz_mem_finished_o,
-    output logic           [1:0]                 spatz_mem_str_finished_o
+    output logic           [1:0]                 spatz_mem_str_finished_o,
 
     // output logic [4:0]      vlsu0_vd_o,
     // output logic [4:0]      vlsu1_vd_o
@@ -170,16 +170,18 @@ always_comb begin
 
     if (mem_spatz_req_ready[0]) begin//spatz_mem_finished_o[0]) begin
         core_busy_d[0] = 1'b0;
-        vlsu_assignment_d.use_vlsu0 = 1'b0;
-        vlsu_assignment_d.spatz_req_id0 = '0;
-        vlsu_assignment_d.spatz_vd0 = '0;
+        // vlsu_assignment_d.use_vlsu0 = 1'b0;
+        // vlsu_assignment_d.use_vd0 = 1'b0;
+        // vlsu_assignment_d.spatz_req_id0 = '0;
+        // vlsu_assignment_d.spatz_vd0 = '0;
     end 
 
     if (mem_spatz_req_ready[1]) begin//spatz_mem_finished_o[1]) begin
         core_busy_d[1] = 1'b0;
-        vlsu_assignment_d.use_vlsu1 = 1'b0;
-        vlsu_assignment_d.spatz_req_id1 = '0;
-        vlsu_assignment_d.spatz_vd1 = '0;
+        // vlsu_assignment_d.use_vlsu1 = 1'b0;
+        // vlsu_assignment_d.use_vd1 = 1'b0;
+        // vlsu_assignment_d.spatz_req_id1 = '0;
+        // vlsu_assignment_d.spatz_vd1 = '0;
     end
 
     if (mem_spatz_req_valid) begin
@@ -189,6 +191,7 @@ always_comb begin
 
             // store the decision for the controller (yx)
             vlsu_assignment_d.spatz_req_id0 = mem_spatz_req.id;
+            vlsu_assignment_d.vd_is_src0 = mem_spatz_req.vd_is_src;
             vlsu_assignment_d.use_vlsu0 = 1'b1;
             vlsu_assignment_d.spatz_vd0 = mem_spatz_req.vd;
         end else if (!core_busy_q[1]) begin
@@ -197,6 +200,7 @@ always_comb begin
 
             // store the decision for the controller (yx)
             vlsu_assignment_d.spatz_req_id1 = mem_spatz_req.id;
+            vlsu_assignment_d.vd_is_src1 = mem_spatz_req.vd_is_src;
             vlsu_assignment_d.use_vlsu1 = 1'b1;
             vlsu_assignment_d.spatz_vd1 = mem_spatz_req.vd;
         end

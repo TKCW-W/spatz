@@ -55,8 +55,8 @@ module spatz_controller
     input  logic             [NrWritePorts-1:0]    sb_wrote_result_i,
     output logic             [NrVregfilePorts-1:0] sb_enable_o,
     input  spatz_id_t        [NrVregfilePorts-1:0] sb_id_i,
-    //output logic [NrVregfilePorts-NrWritePorts-1:0] sb_vlefw_read_o,  // VLE forward read enable for VRF (yx)
-    //output logic             [NrWritePorts-1:0]    sb_vlefw_write_o  // VLE forward write enable for VRF (yx)
+    output logic [NrVregfilePorts-NrWritePorts-1:0] sb_vlefw_read_o,  // VLE forward read enable for VRF (yx)
+    output logic             [NrWritePorts-1:0]    sb_vlefw_write_o,  // VLE forward write enable for VRF (yx)
     
     // VLSU assignment decision (yx)
     input vlsu_assignment_t                       vlsu_assignment_i 
@@ -301,6 +301,9 @@ module spatz_controller
   logic [NrParallelInstructions-1:0] wrote_result_narrowing_q, wrote_result_narrowing_d;
   `FF(wrote_result_narrowing_q, wrote_result_narrowing_d, '0)
 
+  // Define the read ports (yx) 
+  localparam int NrReadPorts = NrVregfilePorts - NrWritePorts;
+
   always_comb begin : scoreboard
     // Maintain stated
     read_table_d             = read_table_q;
@@ -321,8 +324,8 @@ module spatz_controller
 
     // YX
     vlefw_table_d            = vlefw_table_q; //(yx)
-    // sb_vlefw_read_o          = '0; //(yx)
-    // sb_vlefw_write_o         = '0; //(yx)
+    sb_vlefw_read_o          = '0; //(yx)
+    sb_vlefw_write_o         = '0; //(yx)
 
     // Nobody wrote to the VRF yet
     wrote_result_d = '0;
@@ -441,6 +444,28 @@ module spatz_controller
       end
     end
 
+    // enable the streaming ports depending on the scoreboard decisions (yx) 
+    for (int unsigned port = 0; port < NrVregfilePorts; port++) begin
+      if (sb_enable_o[port] && vlefw_en_q) begin
+        // Check if this instruction is accessing the forward register
+        if (port < NrReadPorts) begin
+          // Read port
+          if (vlefw_table_q[sb_id_i[port]].read[port]) begin
+            sb_vlefw_read_o[port] = 1'b1;
+          end else begin 
+            sb_vlefw_read_o[port] = 1'b0;
+          end
+        end else begin
+          // Write port
+          if (vlefw_table_q[sb_id_i[port]].write[port - NrReadPorts]) begin
+            sb_vlefw_write_o[port - NrReadPorts] = 1'b1;
+          end else begin 
+            sb_vlefw_write_o[port - NrReadPorts] = 1'b0;
+          end
+        end
+      end
+    end 
+
     // Store the decisions
     if (sb_enable_o[SB_VFU_VD_WD]) begin
       wrote_result_narrowing_d[sb_id_i[SB_VFU_VD_WD]] = sb_wrote_result_i[SB_VFU_VD_WD - SB_VFU_VD_WD] ^ narrow_wide_q[sb_id_i[SB_VFU_VD_WD]];
@@ -494,7 +519,7 @@ module spatz_controller
       scoreboard_d[vlsu_rsp_i[0].id]             = '0;
       narrow_wide_d[vlsu_rsp_i[0].id]            = 1'b0;
       wrote_result_narrowing_d[vlsu_rsp_i[0].id] = 1'b0;
-      vlefw_table_d[vfu_rsp_i.id]            = '0; // clear the forward tracking with scoreboard (yx)
+      vlefw_table_d[vlsu_rsp_i[0].id]            = '0; // clear the forward tracking with scoreboard (yx)
       for (int unsigned insn = 0; insn < NrParallelInstructions; insn++)
         scoreboard_d[insn].deps[vlsu_rsp_i[0].id] = 1'b0;
 
@@ -515,7 +540,7 @@ module spatz_controller
       scoreboard_d[vlsu_rsp_i[1].id]             = '0;
       narrow_wide_d[vlsu_rsp_i[1].id]            = 1'b0;
       wrote_result_narrowing_d[vlsu_rsp_i[1].id] = 1'b0;
-      vlefw_table_d[vfu_rsp_i.id]            = '0; // clear the forward tracking with scoreboard (yx)
+      vlefw_table_d[vlsu_rsp_i[1].id]            = '0; // clear the forward tracking with scoreboard (yx)
       for (int unsigned insn = 0; insn < NrParallelInstructions; insn++)
         scoreboard_d[insn].deps[vlsu_rsp_i[1].id] = 1'b0;
 
@@ -608,14 +633,19 @@ module spatz_controller
 
     // Handle the VLSU selections, separate the enable signals for stream for VLSU (yx) 
     if (vlsu_assignment_i.use_vlsu0 || vlsu_assignment_i.use_vlsu1) begin
-      if (vlsu_assignment_i.use_vlsu0) begin 
-        if (vlsu_assignment_i.spatz_vd0 && FWVreg_q[vreg_t'(vlsu_assignment_i.spatz_vd0)]) 
+
+      if (vlsu_assignment_i.use_vlsu0) begin
+        if ((!vlsu_assignment_i.vd_is_src0) && FWVreg_q[vreg_t'(vlsu_assignment_i.spatz_vd0)]) 
           vlefw_table_d[vlsu_assignment_i.spatz_req_id0].write[SB_VLSU0_VD_WD-(NrVregfilePorts-NrWritePorts)] = 1'b1;
-      end else if (vlsu_assignment_i.use_vlsu1) begin 
-        if (vlsu_assignment_i.spatz_vd1 && FWVreg_q[vreg_t'(vlsu_assignment_i.spatz_vd1)]) 
-          vlefw_table_d[vlsu_assignment_i.spatz_req_id1].write[SB_VLSU1_VD_WD-(NrVregfilePorts-NrWritePorts)] = 1'b1; 
       end else begin 
         vlefw_table_d[vlsu_assignment_i.spatz_req_id0].write[SB_VLSU0_VD_WD-(NrVregfilePorts-NrWritePorts)] = 1'b0; 
+
+      end
+      
+      if (vlsu_assignment_i.use_vlsu1) begin 
+        if ((!vlsu_assignment_i.vd_is_src1) && FWVreg_q[vreg_t'(vlsu_assignment_i.spatz_vd1)]) 
+          vlefw_table_d[vlsu_assignment_i.spatz_req_id1].write[SB_VLSU1_VD_WD-(NrVregfilePorts-NrWritePorts)] = 1'b1; 
+      end else begin 
         vlefw_table_d[vlsu_assignment_i.spatz_req_id1].write[SB_VLSU1_VD_WD-(NrVregfilePorts-NrWritePorts)] = 1'b0;
       end
           

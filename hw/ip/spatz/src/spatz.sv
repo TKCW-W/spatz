@@ -255,6 +255,9 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
   logic      [NrWritePorts-1:0]             sb_we, sb_we_buf;
   spatz_id_t [NrReadPorts+NrWritePorts-1:0] sb_id, sb_buf_id;
 
+  // VLSU assignment signals for connecting the vlsu_wrapper to the controller 
+  vlsu_assignment_t vlsu_assignment; 
+
   spatz_controller #(
     .NrVregfilePorts  (NrReadPorts+NrWritePorts),
     .NrWritePorts     (NrWritePorts            ),
@@ -312,7 +315,10 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     .sb_id_i          (sb_buf_id         ),
     .sb_wrote_result_i(vrf_wvalid        ),
     .sb_enable_i      ({sb_we_buf, sb_re}),
-    .sb_enable_o      ({vrf_we, vrf_re}  )
+    .sb_enable_o      ({vrf_we, vrf_re}  ),
+
+    // VLSU assignment signal input from the vlsu wrapper 
+    .vlsu_assignment_i(vlsu_assignment   )
 
   );
 
@@ -466,11 +472,15 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     .spatz_mem_rsp_i         (spatz_mem_rsp_i                                      ),
     .spatz_mem_rsp_valid_i   (spatz_mem_rsp_valid_i                                ),
     .spatz_mem_finished_o    (spatz_mem_finished                                   ),
-    .spatz_mem_str_finished_o(spatz_mem_str_finished                               )
+    .spatz_mem_str_finished_o(spatz_mem_str_finished                               ),
+
 
     // // QW: VLSU0 VD accessing register 
     // .vlsu0_vd_o              (vlsu0_vd),
     // .vlsu1_vd_o              (vlsu1_vd)
+
+    // VLSU assignment decision for streaming extensions (yx) 
+    .vlsu_assignment_o       (vlsu_assignment                                      )
   );
 
   ///////////

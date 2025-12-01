@@ -63,7 +63,7 @@ package spatz_pkg;
   localparam int GPRWidth = FPU ? 6 : 5;
 
   // Number of parallel vector instructions
-  localparam int unsigned NrParallelInstructions = 4;
+  localparam int unsigned NrParallelInstructions = 5;
 
   // Largest element width that Spatz supports
   localparam vew_e MAXEW = RVD ? EW_64 : EW_32;
@@ -146,12 +146,17 @@ package spatz_pkg;
 
   //vlsu assignment decision (yx)
   typedef struct packed {
+    // for VLSU core 0
     logic        use_vlsu0;
-    logic [1:0]  spatz_req_id0;
+    logic [2:0]  spatz_req_id0;
     vreg_t spatz_vd0;
+    logic        vd_is_src0;
+    
+    // for VLSU core 1
     logic       use_vlsu1;
-    logic [1:0] spatz_req_id1;
+    logic [2:0] spatz_req_id1;
     vreg_t spatz_vd1;
+    logic       vd_is_src1;
   } vlsu_assignment_t;
 
   //add the vleforward as a config (yx) 
