@@ -293,6 +293,11 @@ module spatz_controller
   logic [NrParallelInstructions-1:0] wrote_result_q, wrote_result_d;
   `FF(wrote_result_q, wrote_result_d, '0)
 
+  // A single bit flag to check if at least one VRF write attempt is done 
+  // Chaining can start when this is set (yx)
+  logic [NrParallelInstructions-1:0] wrote_result_trigger_q, wrote_result_trigger_d;
+  `FF(wrote_result_trigger_q, wrote_result_trigger_d, '0)
+
   // Is this instruction a narrowing or widening instruction?
   logic [NrParallelInstructions-1:0] narrow_wide_q, narrow_wide_d;
   `FF(narrow_wide_q, narrow_wide_d, '0)
@@ -326,6 +331,7 @@ module spatz_controller
     vlefw_table_d            = vlefw_table_q; //(yx)
     sb_vlefw_read_o          = '0; //(yx)
     sb_vlefw_write_o         = '0; //(yx)
+    wrote_result_trigger_d   = wrote_result_trigger_q; 
 
     // Nobody wrote to the VRF yet
     wrote_result_d = '0;
@@ -337,6 +343,12 @@ module spatz_controller
       if (port != SB_VFU_VD_WD) begin//&& port != SB_VFU_VS1_RD && port != SB_VFU_VS2_RD) begin // && port != SB_VFU_VD_RD) begin
         sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
       end
+
+      // Grant access to VRF read ports for VFU when there is at least one valid data from VLSU (yx)
+      if (port < 3) begin 
+        sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_trigger_q) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
+      end    
+
     end 
 
     // QW: Initialise or update vlsu0 counter
@@ -394,39 +406,6 @@ module spatz_controller
       sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining);  
     end
 
-
-    // // QW: VFU ReadPort enable logic
-    // if (|scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps && counter_en_d[0] && counter_en_d[1]) begin
-    //   // Ensure VFU and VLSUs are aligned
-    //   if (scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[vlsu0_count_q.id] && scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[vlsu1_count_q.id]) begin
-    //     if(vlsu0_count_q.num_written > vfu_count_q.num_written && vlsu1_count_q.num_written > vfu_count_q.num_written) begin
-    //       sb_enable_o[SB_VFU_VS1_RD] = sb_enable_i[SB_VFU_VS1_RD] && !scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].prevent_chaining;
-    //       sb_enable_o[SB_VFU_VS2_RD] = sb_enable_i[SB_VFU_VS2_RD] && !scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].prevent_chaining;
-    //       //sb_enable_o[SB_VFU_VD_RD] = sb_enable_i[SB_VFU_VD_RD] && !scoreboard_q[sb_id_i[SB_VFU_VD_RD]].prevent_chaining;
-    //     end
-    //   end else if (scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[vlsu0_count_q.id] && !scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[vlsu1_count_q.id]) begin //vlsu1 completes
-    //     if(vlsu0_count_q.num_written > vfu_count_q.num_written) begin
-    //       sb_enable_o[SB_VFU_VS1_RD] = sb_enable_i[SB_VFU_VS1_RD] && !scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].prevent_chaining;    
-    //       sb_enable_o[SB_VFU_VS2_RD] = sb_enable_i[SB_VFU_VS2_RD] && !scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].prevent_chaining; 
-    //       //sb_enable_o[SB_VFU_VD_RD] = sb_enable_i[SB_VFU_VD_RD] && !scoreboard_q[sb_id_i[SB_VFU_VD_RD]].prevent_chaining;         
-    //     end
-    //   end else if (!scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[vlsu0_count_q.id] && scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps[vlsu1_count_q.id]) begin //vlsu0 completes
-    //     if(vlsu1_count_q.num_written > vfu_count_q.num_written) begin
-    //       sb_enable_o[SB_VFU_VS1_RD] = sb_enable_i[SB_VFU_VS1_RD] && !scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].prevent_chaining;
-    //       sb_enable_o[SB_VFU_VS2_RD] = sb_enable_i[SB_VFU_VS2_RD] && !scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].prevent_chaining; 
-    //       //sb_enable_o[SB_VFU_VD_RD] = sb_enable_i[SB_VFU_VD_RD] && !scoreboard_q[sb_id_i[SB_VFU_VD_RD]].prevent_chaining;          
-    //     end
-    //   end else begin // VFU depends on other instructions, use original grant
-    //     sb_enable_o[SB_VFU_VS1_RD] = sb_enable_i[SB_VFU_VS1_RD] && &(~scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].prevent_chaining);
-    //     sb_enable_o[SB_VFU_VS2_RD] = sb_enable_i[SB_VFU_VS2_RD] && &(~scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].prevent_chaining);
-    //     //sb_enable_o[SB_VFU_VD_RD] = sb_enable_i[SB_VFU_VD_RD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_RD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_RD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_RD]].prevent_chaining);
-    //   end
-    // end else begin // VFU has no dependencies
-    //   sb_enable_o[SB_VFU_VS1_RD] = sb_enable_i[SB_VFU_VS1_RD] && &(~scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VS1_RD]].prevent_chaining); 
-    //   sb_enable_o[SB_VFU_VS2_RD] = sb_enable_i[SB_VFU_VS2_RD] && &(~scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].prevent_chaining);
-    //   //sb_enable_o[SB_VFU_VD_RD] = sb_enable_i[SB_VFU_VD_RD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_RD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_RD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_RD]].prevent_chaining); 
-    // end
-
     // QW: Initialise or update vfu counter
     // Initialise when the Read Ports track new ID, update only when Write Port track the same ID (new instruction)
     if (sb_enable_o[SB_VFU_VD_WD]) begin
@@ -474,10 +453,18 @@ module spatz_controller
     if (sb_enable_o[SB_VLSU0_VD_WD]) begin
       wrote_result_narrowing_d[sb_id_i[SB_VLSU0_VD_WD]] = sb_wrote_result_i[SB_VLSU0_VD_WD - SB_VFU_VD_WD] ^ narrow_wide_q[sb_id_i[SB_VLSU0_VD_WD]];
       wrote_result_d[sb_id_i[SB_VLSU0_VD_WD]]           = sb_wrote_result_i[SB_VLSU0_VD_WD - SB_VFU_VD_WD] && (!narrow_wide_q[sb_id_i[SB_VLSU0_VD_WD]] || wrote_result_narrowing_q[sb_id_i[SB_VLSU0_VD_WD]]);
+      // Once the data from VLSU is successfully written to VRF, the flag will raise to indicate readiness of chaining (yx)
+      if (wrote_result_d[sb_id_i[SB_VLSU0_VD_WD]]) begin
+          wrote_result_trigger_d[sb_id_i[SB_VLSU0_VD_WD]] = 1'b1; 
+      end       
     end
     if (sb_enable_o[SB_VLSU1_VD_WD]) begin
       wrote_result_narrowing_d[sb_id_i[SB_VLSU1_VD_WD]] = sb_wrote_result_i[SB_VLSU1_VD_WD - SB_VFU_VD_WD] ^ narrow_wide_q[sb_id_i[SB_VLSU1_VD_WD]];
       wrote_result_d[sb_id_i[SB_VLSU1_VD_WD]]           = sb_wrote_result_i[SB_VLSU1_VD_WD - SB_VFU_VD_WD] && (!narrow_wide_q[sb_id_i[SB_VLSU1_VD_WD]] || wrote_result_narrowing_q[sb_id_i[SB_VLSU1_VD_WD]]);
+      // Once the data from VLSU is successfully written to VRF, the flag will raise to indicate readiness of chaining (yx)
+      if (wrote_result_d[sb_id_i[SB_VLSU1_VD_WD]]) begin
+          wrote_result_trigger_d[sb_id_i[SB_VLSU1_VD_WD]] = 1'b1; 
+      end      
     end    
     if (sb_enable_o[SB_VSLDU_VD_WD]) begin
       wrote_result_narrowing_d[sb_id_i[SB_VSLDU_VD_WD]] = sb_wrote_result_i[SB_VSLDU_VD_WD - SB_VFU_VD_WD] ^ narrow_wide_q[sb_id_i[SB_VSLDU_VD_WD]];
@@ -520,6 +507,7 @@ module spatz_controller
       narrow_wide_d[vlsu_rsp_i[0].id]            = 1'b0;
       wrote_result_narrowing_d[vlsu_rsp_i[0].id] = 1'b0;
       vlefw_table_d[vlsu_rsp_i[0].id]            = '0; // clear the forward tracking with scoreboard (yx)
+      wrote_result_trigger_d[sb_id_i[SB_VLSU0_VD_WD]]       = 1'b0; // Clear the chaining ready trigger with the scoreboard (yx)
       for (int unsigned insn = 0; insn < NrParallelInstructions; insn++)
         scoreboard_d[insn].deps[vlsu_rsp_i[0].id] = 1'b0;
 
@@ -541,6 +529,7 @@ module spatz_controller
       narrow_wide_d[vlsu_rsp_i[1].id]            = 1'b0;
       wrote_result_narrowing_d[vlsu_rsp_i[1].id] = 1'b0;
       vlefw_table_d[vlsu_rsp_i[1].id]            = '0; // clear the forward tracking with scoreboard (yx)
+      wrote_result_trigger_d[sb_id_i[SB_VLSU1_VD_WD]]       = 1'b0; // Clear the chaining ready trigger with the scoreboard (yx)
       for (int unsigned insn = 0; insn < NrParallelInstructions; insn++)
         scoreboard_d[insn].deps[vlsu_rsp_i[1].id] = 1'b0;
 

@@ -217,11 +217,13 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
   logic      [NrWritePorts-1:0] vrf_we;
   vrf_be_t   [NrWritePorts-1:0] vrf_wbe, vrf_wbe_buf;
   logic      [NrWritePorts-1:0] vrf_wvalid;
+  logic      [NrWritePorts-1:0] vrf_vlefw_write; //VLE forward write signal (yx)
   // Read ports
   vrf_addr_t [NrReadPorts-1:0]  vrf_raddr;
   logic      [NrReadPorts-1:0]  vrf_re;
   vrf_data_t [NrReadPorts-1:0]  vrf_rdata;
   logic      [NrReadPorts-1:0]  vrf_rvalid;
+  logic      [NrReadPorts-1:0]  vrf_vlefw_read; //VLE forward read signal (yx)
 
   spatz_vrf #(
     .NrReadPorts (NrReadPorts ),
@@ -236,6 +238,7 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     .we_i            (vrf_we        ),
     .wbe_i           (vrf_wbe_buf   ),
     .wvalid_o        (vrf_wvalid    ),
+    .vlefw_write_i   (vrf_vlefw_write), // VLE Forward write signal (yx)
   `ifdef BUF_FPU
     .fpu_buf_usage_i (vfu_buf_usage ),
   `endif
@@ -243,7 +246,8 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     .raddr_i         (vrf_raddr     ),
     .re_i            (vrf_re        ),
     .rdata_o         (vrf_rdata     ),
-    .rvalid_o        (vrf_rvalid    )
+    .rvalid_o        (vrf_rvalid    ),
+    .vlefw_read_i    (vrf_vlefw_read) // VLE Forward read signal (yx)
   );
 
   ////////////////
@@ -318,7 +322,9 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     .sb_enable_o      ({vrf_we, vrf_re}  ),
 
     // VLSU assignment signal input from the vlsu wrapper 
-    .vlsu_assignment_i(vlsu_assignment   )
+    .vlsu_assignment_i(vlsu_assignment   ),
+    .sb_vlefw_read_o  (vrf_vlefw_read  ),
+    .sb_vlefw_write_o (vrf_vlefw_write )
 
   );
 
