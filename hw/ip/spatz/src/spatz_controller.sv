@@ -342,14 +342,32 @@ module spatz_controller
       // QW: assign vfu grant decision later after counter logic 
       if (port != SB_VFU_VD_WD) begin//&& port != SB_VFU_VS1_RD && port != SB_VFU_VS2_RD) begin // && port != SB_VFU_VD_RD) begin
         sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
-      end
-
-      // Grant access to VRF read ports for VFU when there is at least one valid data from VLSU (yx)
-      if (port < 3) begin 
-        sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_trigger_d) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
-      end    
-
+      end 
     end 
+
+
+    if (sb_enable_o[SB_VLSU0_VD_WD]) begin
+      wrote_result_narrowing_d[sb_id_i[SB_VLSU0_VD_WD]] = sb_wrote_result_i[SB_VLSU0_VD_WD - SB_VFU_VD_WD] ^ narrow_wide_q[sb_id_i[SB_VLSU0_VD_WD]];
+      wrote_result_d[sb_id_i[SB_VLSU0_VD_WD]]           = sb_wrote_result_i[SB_VLSU0_VD_WD - SB_VFU_VD_WD] && (!narrow_wide_q[sb_id_i[SB_VLSU0_VD_WD]] || wrote_result_narrowing_q[sb_id_i[SB_VLSU0_VD_WD]]);
+      // Once the data from VLSU is successfully written to VRF, the flag will raise to indicate readiness of chaining (yx)
+      if (wrote_result_d[sb_id_i[SB_VLSU0_VD_WD]]) begin
+          wrote_result_trigger_d[sb_id_i[SB_VLSU0_VD_WD]] = 1'b1; 
+      end       
+    end
+
+    if (sb_enable_o[SB_VLSU1_VD_WD]) begin
+      wrote_result_narrowing_d[sb_id_i[SB_VLSU1_VD_WD]] = sb_wrote_result_i[SB_VLSU1_VD_WD - SB_VFU_VD_WD] ^ narrow_wide_q[sb_id_i[SB_VLSU1_VD_WD]];
+      wrote_result_d[sb_id_i[SB_VLSU1_VD_WD]]           = sb_wrote_result_i[SB_VLSU1_VD_WD - SB_VFU_VD_WD] && (!narrow_wide_q[sb_id_i[SB_VLSU1_VD_WD]] || wrote_result_narrowing_q[sb_id_i[SB_VLSU1_VD_WD]]);
+      // Once the data from VLSU is successfully written to VRF, the flag will raise to indicate readiness of chaining (yx)
+      if (wrote_result_d[sb_id_i[SB_VLSU1_VD_WD]]) begin
+          wrote_result_trigger_d[sb_id_i[SB_VLSU1_VD_WD]] = 1'b1; 
+      end      
+    end  
+
+        // Grant access to VRF read ports for VFU when there is at least one valid data from VLSU (yx)
+    for (int unsigned port = 0; port < 3; port++) begin 
+      sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_trigger_d) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
+    end   
 
     // QW: Initialise or update vlsu0 counter
     if (sb_enable_o[SB_VLSU0_VD_WD]) begin

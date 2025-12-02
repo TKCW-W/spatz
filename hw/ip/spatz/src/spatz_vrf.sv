@@ -199,7 +199,7 @@ module spatz_vrf
 
             if (vlefw_write_i[VLSU0_VD_WD]) begin 
               if (vlefw_start_q[0]) begin 
-                if ((|vlefw_read_i) && (~(|vlefw_stall_q))) begin
+                if ((|vlefw_read_i) && (vlefw_start_q[1])) begin
                   vlefw_data_d[0] = wdata_i[VLSU0_VD_WD];
                   vlefw_addr_d[0] = waddr_i[VLSU0_VD_WD];
                   wvalid_o[VLSU0_VD_WD] = 1'b1;
@@ -229,7 +229,7 @@ module spatz_vrf
 
             if (vlefw_write_i[VLSU1_VD_WD]) begin 
               if (vlefw_start_q[1]) begin 
-                if ((|vlefw_read_i) && (~(|vlefw_stall_q))) begin
+                if ((|vlefw_read_i) && (vlefw_start_q[0])) begin
                   vlefw_data_d[1] = wdata_i[VLSU1_VD_WD];
                   vlefw_addr_d[1] = waddr_i[VLSU1_VD_WD];
                   wvalid_o[VLSU1_VD_WD] = 1'b1;
@@ -271,7 +271,7 @@ module spatz_vrf
             //VLE forward, store into buffer (yx)
             if (vlefw_write_i[VLSU0_VD_WD]) begin
               if (vlefw_start_q[0]) begin 
-                if ((|vlefw_read_i) && (~(|vlefw_stall_q))) begin 
+                if ((|vlefw_read_i) && (vlefw_start_q[1])) begin 
                   vlefw_data_d[0] = wdata_i[VLSU0_VD_WD];
                   vlefw_addr_d[0] = waddr_i[VLSU0_VD_WD];
                   wvalid_o[VLSU0_VD_WD] = 1'b1;
@@ -305,7 +305,7 @@ module spatz_vrf
             //VLE forward, store into buffer (yx)
             if (vlefw_write_i[VLSU1_VD_WD]) begin
               if (vlefw_start_q[1]) begin 
-                if ((|vlefw_read_i) && (~(|vlefw_stall_q))) begin 
+                if ((|vlefw_read_i) && (vlefw_start_q[0])) begin 
                   vlefw_data_d[1] = wdata_i[VLSU1_VD_WD];
                   vlefw_addr_d[1] = waddr_i[VLSU1_VD_WD];
                   wvalid_o[VLSU1_VD_WD] = 1'b1;

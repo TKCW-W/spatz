@@ -24,9 +24,9 @@ void gemv_v64b_m4(double *a, double* b, double* c, int M, int M_core, int N) {
   double *b_ = b;
   double *c_ = c;
 
-  asm volatile("vsetvli %0, %1, e64, m4, ta, ma" : "=r"(vl) : "r"(avl));
+  //asm volatile("vsetvli %0, %1, e64, m4, ta, ma" : "=r"(vl) : "r"(avl));
   do {
-    //asm volatile("vsetvli %0, %1, e64, m4, ta, ma" : "=r"(vl) : "r"(avl));
+    asm volatile("vsetvli %0, %1, e64, m4, ta, ma" : "=r"(vl) : "r"(avl));
     for (int col=0; col < N; col+=2) {
       // Load chunk a
       asm volatile("vle64.v v0, (%0)" ::"r"(a_));
