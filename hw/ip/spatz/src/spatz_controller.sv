@@ -308,6 +308,9 @@ module spatz_controller
 
   // Define the read ports (yx) 
   localparam int NrReadPorts = NrVregfilePorts - NrWritePorts;
+  logic [4:0] a_d, a_q, b_d, b_q;
+  `FF(a_q, a_d, '0);
+  `FF(b_q, b_d, '0);
 
   always_comb begin : scoreboard
     // Maintain stated
@@ -322,6 +325,8 @@ module spatz_controller
     vlsu0_count_d            = vlsu0_count_q;
     vlsu1_count_d            = vlsu1_count_q;
     vfu_count_d              = vfu_count_q;
+    a_d = a_q;
+    b_d = b_q;
 
     current_id_vlsu0 = sb_id_i[SB_VLSU0_VD_WD];
     current_id_vlsu1 = sb_id_i[SB_VLSU1_VD_WD];
@@ -340,13 +345,18 @@ module spatz_controller
     for (int unsigned port = 0; port < NrVregfilePorts; port++) begin
       // Enable the VRF port if the dependant instructions wrote in the previous cycle
       // QW: assign vfu grant decision later after counter logic 
-      if (port != SB_VFU_VD_WD) begin//&& port != SB_VFU_VS1_RD && port != SB_VFU_VS2_RD) begin // && port != SB_VFU_VD_RD) begin
+      if (port != SB_VFU_VD_WD && port != SB_VFU_VS1_RD && port != SB_VFU_VS2_RD ) begin//&& port != SB_VFU_VS1_RD && port != SB_VFU_VS2_RD) begin // && port != SB_VFU_VD_RD) begin
         sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
       end
 
       // Grant access to VRF read ports for VFU when there is at least one valid data from VLSU (yx)
-      if (port < 3) begin 
-        sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_trigger_q) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
+      if (port == SB_VFU_VS1_RD || port == SB_VFU_VS2_RD) begin 
+        sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_trigger_d) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
+        // if (&(~scoreboard_q[sb_id_i[SB_VFU_VS2_RD]].deps | wrote_result_trigger_d)) begin
+        //   a_d = 1'b1;
+        // end
+        a_d = scoreboard_q[sb_id_i[port]].deps;//&(~scoreboard_q[sb_id_i[port]].deps | wrote_result_trigger_d);
+        b_d = &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_trigger_d);
       end    
 
     end 
