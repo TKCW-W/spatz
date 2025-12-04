@@ -16,12 +16,13 @@ module spatz_vrf
     input  logic                         clk_i,
     input  logic                         rst_ni,
     input  logic                         testmode_i,
+    input  logic [1:0]                   sb_vlefw_count_i, //(yx)
     // Write ports
     input  vrf_addr_t [NrWritePorts-1:0] waddr_i,
     input  vrf_data_t [NrWritePorts-1:0] wdata_i,
     input  logic      [NrWritePorts-1:0] we_i,
     input  vrf_be_t   [NrWritePorts-1:0] wbe_i,
-    input  logic      [NrWritePorts-1:0] vlefw_write_i, //(yx) 
+    input  sb_vlefw_t [NrWritePorts-1:0] vlefw_write_i, //(yx) 
     output logic      [NrWritePorts-1:0] wvalid_o,
 `ifdef BUF_FPU
     // Signal to track if  result can be buffered or not
@@ -30,7 +31,7 @@ module spatz_vrf
     // Read ports
     input  vrf_addr_t [NrReadPorts-1:0]  raddr_i,
     input  logic      [NrReadPorts-1:0]  re_i,
-    input  logic      [NrReadPorts-1:0]  vlefw_read_i, //(yx)
+    input  sb_vlefw_t [NrReadPorts-1:0]  vlefw_read_i, //(yx)
     output vrf_data_t [NrReadPorts-1:0]  rdata_o,
     output logic      [NrReadPorts-1:0]  rvalid_o
   );
@@ -61,6 +62,16 @@ module spatz_vrf
     f_bank = addr[$clog2(NrVRFBanks)-1:0] + vreg8;
   endfunction: f_bank
 
+  function automatic logic f_match(sb_vlefw_t write, sb_vlefw_t [NrReadPorts-1:0] read);
+    f_match = 1'b0;
+    for (int unsigned port = 0; port < 3; port++) begin 
+      if ((write.FWreg == read[port].FWreg) && write.en && read[port].en) begin 
+        f_match = 1'b1;
+        break;
+      end
+    end
+  endfunction: f_match
+
  
   /////////////
   // Signals //
@@ -84,7 +95,8 @@ module spatz_vrf
   /////////////////
   // VLE forward //
   /////////////////
-  vrf_data_t  [1:0]      vlefw_data_d, vlefw_data_q;//QW: 0 for VLSU0, 1 for VLSU1
+
+  vrf_data_t [1:0]      vlefw_data_d, vlefw_data_q;//QW: 0 for VLSU0, 1 for VLSU1
   `FF(vlefw_data_q, vlefw_data_d, '0);
 
   logic       [1:0]      vlefw_start_d, vlefw_start_q;
@@ -93,10 +105,12 @@ module spatz_vrf
   vrf_addr_t  [1:0]  vlefw_addr_d, vlefw_addr_q;
   `FF(vlefw_addr_q, vlefw_addr_d, '0);
 
-  //QW
-  // Stall signal to synchronise both writes to buffer
-  logic [1:0] vlefw_stall_d, vlefw_stall_q;
-  `FF(vlefw_stall_q, vlefw_stall_d, '0);
+  vreg_t  [1:0]  vlefw_reg_d, vlefw_reg_q;
+  `FF(vlefw_reg_q, vlefw_reg_d, '0);
+
+  // Check if there is a dependency where the 2 VLSUs need to wait for each other 
+  logic cross_dependency;
+  assign cross_dependency = (sb_vlefw_count_i == 2'd2) ? 1'b1 : 1'b0; //(yx)
 
   ///////////////////
   // Write Mapping //
@@ -126,17 +140,14 @@ module spatz_vrf
     vlefw_data_d  = vlefw_data_q;
     vlefw_start_d = vlefw_start_q;
     vlefw_addr_d  = vlefw_addr_q;
-    vlefw_stall_d = vlefw_stall_q;
-
+    vlefw_reg_d   = vlefw_reg_q;
   
-    if (~vlefw_write_i[VLSU0_VD_WD]) begin 
+    if (~vlefw_write_i[VLSU0_VD_WD].en) begin 
       vlefw_start_d[0] = 1'b0;
-      vlefw_stall_d[0] = 1'b1;
     end
 
-    if (~vlefw_write_i[VLSU1_VD_WD]) begin 
+    if (~vlefw_write_i[VLSU1_VD_WD].en) begin 
       vlefw_start_d[1] = 1'b0;
-      vlefw_stall_d[1] = 1'b1;
     end
 
 
@@ -197,14 +208,13 @@ module spatz_vrf
           // Resolve the competition if the forward buffer is enabled together with VFU (yx)
           if (write_request[bank][VLSU0_VD_WD]) begin
 
-            if (vlefw_write_i[VLSU0_VD_WD]) begin 
+            if (vlefw_write_i[VLSU0_VD_WD].en) begin 
               if (vlefw_start_q[0]) begin 
-                if ((|vlefw_read_i) && (vlefw_start_q[1])) begin
+                if ((f_match(vlefw_write_i[VLSU0_VD_WD], vlefw_read_i)) && (cross_dependency?vlefw_start_q[1]:1'b1)) begin
                   vlefw_data_d[0] = wdata_i[VLSU0_VD_WD];
                   vlefw_addr_d[0] = waddr_i[VLSU0_VD_WD];
+                  vlefw_reg_d[0]  = vlefw_write_i[VLSU0_VD_WD].FWreg;
                   wvalid_o[VLSU0_VD_WD] = 1'b1;
-                  // Clear stall signal if continue straming
-                  vlefw_stall_d[0] = 1'b0;
                 end else begin 
                   // Stall the LSU write if no forward read signal to read from the buffer 
                   vlefw_data_d[0] = vlefw_data_q[0]; 
@@ -215,9 +225,9 @@ module spatz_vrf
                 // First write cycle, store data and mark start
                 vlefw_data_d[0] = wdata_i[VLSU0_VD_WD];
                 vlefw_addr_d[0] = waddr_i[VLSU0_VD_WD];
+                vlefw_reg_d[0]  = vlefw_write_i[VLSU0_VD_WD].FWreg;
                 wvalid_o[VLSU0_VD_WD] = 1'b1;
                 vlefw_start_d[0] = 1'b1;
-                vlefw_stall_d[0] = 1'b0;
               end
             end else begin 
               // If write request from LSU is invalid, clear the start bit to indicate disruptions in writing 
@@ -227,13 +237,13 @@ module spatz_vrf
 
           if (write_request[bank][VLSU1_VD_WD]) begin
 
-            if (vlefw_write_i[VLSU1_VD_WD]) begin 
+            if (vlefw_write_i[VLSU1_VD_WD].en) begin 
               if (vlefw_start_q[1]) begin 
-                if ((|vlefw_read_i) && (vlefw_start_q[0])) begin
+                if (f_match(vlefw_write_i[VLSU1_VD_WD], vlefw_read_i) && (cross_dependency?vlefw_start_q[0]:1'b1)) begin
                   vlefw_data_d[1] = wdata_i[VLSU1_VD_WD];
                   vlefw_addr_d[1] = waddr_i[VLSU1_VD_WD];
+                  vlefw_reg_d[1]  = vlefw_write_i[VLSU1_VD_WD].FWreg;
                   wvalid_o[VLSU1_VD_WD] = 1'b1;
-                  vlefw_stall_d[1] = 1'b0;
                 end else begin 
                   // Stall the LSU write if no forward read signal to read from the buffer 
                   vlefw_data_d[1] = vlefw_data_q[1]; 
@@ -244,38 +254,26 @@ module spatz_vrf
                 // First write cycle, store data and mark start
                 vlefw_data_d[1] = wdata_i[VLSU1_VD_WD];
                 vlefw_addr_d[1] = waddr_i[VLSU1_VD_WD];
+                vlefw_reg_d[1]  = vlefw_write_i[VLSU1_VD_WD].FWreg;
                 wvalid_o[VLSU1_VD_WD] = 1'b1;
                 vlefw_start_d[1] = 1'b1;
-                vlefw_stall_d[1] = 1'b0;
               end
             end else begin 
               // If write request from LSU is invalid, clear the start bit to indicate disruptions in writing 
               vlefw_start_d[1] = 1'b0;
             end 
           end  
-            
-        end else if (write_request[bank][VSLDU_VD_WD]) begin
-          waddr[bank]           = f_vreg(waddr_i[VSLDU_VD_WD]);
-          wdata[bank]           = wdata_i[VSLDU_VD_WD];
-          we[bank]              = 1'b1;
-          wbe[bank]             = wbe_i[VSLDU_VD_WD];
-          wvalid_o[VSLDU_VD_WD] = 1'b1;
-        end else begin
+        end else if (write_request[bank][VLSU0_VD_WD] || write_request[bank][VLSU1_VD_WD])begin
           if (write_request[bank][VLSU0_VD_WD]) begin
-            waddr[bank]          = f_vreg(waddr_i[VLSU0_VD_WD]);
-            wdata[bank]          = wdata_i[VLSU0_VD_WD];
-            we[bank]             = 1'b1 & (~vlefw_write_i[VLSU0_VD_WD]); // No write enable to VRF if forward is enabled (yx)
-            wbe[bank]            = wbe_i[VLSU0_VD_WD];
-            wvalid_o[VLSU0_VD_WD] = 1'b1;
 
             //VLE forward, store into buffer (yx)
-            if (vlefw_write_i[VLSU0_VD_WD]) begin
+            if (vlefw_write_i[VLSU0_VD_WD].en) begin
               if (vlefw_start_q[0]) begin 
-                if ((|vlefw_read_i) && (vlefw_start_q[1])) begin 
+                if (f_match(vlefw_write_i[VLSU0_VD_WD], vlefw_read_i) && (cross_dependency?vlefw_start_q[1]:1'b1)) begin 
                   vlefw_data_d[0] = wdata_i[VLSU0_VD_WD];
                   vlefw_addr_d[0] = waddr_i[VLSU0_VD_WD];
+                  vlefw_reg_d[0]  = vlefw_write_i[VLSU0_VD_WD].FWreg;
                   wvalid_o[VLSU0_VD_WD] = 1'b1;
-                  vlefw_stall_d[0] = 1'b0;
                 end else begin 
                   // No read signal yet, KEEP old buffer value
                   vlefw_data_d[0] = vlefw_data_q[0]; // ← This retains the old value
@@ -286,30 +284,31 @@ module spatz_vrf
                 // First write cycle, store data and mark start
                 vlefw_data_d[0] = wdata_i[VLSU0_VD_WD];
                 vlefw_addr_d[0] = waddr_i[VLSU0_VD_WD];
+                vlefw_reg_d[0]  = vlefw_write_i[VLSU0_VD_WD].FWreg;
                 wvalid_o[VLSU0_VD_WD] = 1'b1;
                 vlefw_start_d[0] = 1'b1;
-                vlefw_stall_d[0] = 1'b0;
               end
             end else begin 
               vlefw_start_d[0] = 1'b0;
+
+              waddr[bank]          = f_vreg(waddr_i[VLSU0_VD_WD]);
+              wdata[bank]          = wdata_i[VLSU0_VD_WD];
+              we[bank]             = 1'b1 & (~vlefw_write_i[VLSU0_VD_WD].en); // No write enable to VRF if forward is enabled (yx)
+              wbe[bank]            = wbe_i[VLSU0_VD_WD];
+              wvalid_o[VLSU0_VD_WD] = 1'b1;
             end
           end 
             
           if (write_request[bank][VLSU1_VD_WD]) begin
-            waddr[bank]          = f_vreg(waddr_i[VLSU1_VD_WD]);
-            wdata[bank]          = wdata_i[VLSU1_VD_WD];
-            we[bank]             = 1'b1 & (~vlefw_write_i[VLSU1_VD_WD]); // No write enable to VRF if forward is enabled (yx)
-            wbe[bank]            = wbe_i[VLSU1_VD_WD];
-            wvalid_o[VLSU1_VD_WD] = 1'b1;
 
             //VLE forward, store into buffer (yx)
-            if (vlefw_write_i[VLSU1_VD_WD]) begin
+            if (vlefw_write_i[VLSU1_VD_WD].en) begin
               if (vlefw_start_q[1]) begin 
-                if ((|vlefw_read_i) && (vlefw_start_q[0])) begin 
+                if (f_match(vlefw_write_i[VLSU1_VD_WD], vlefw_read_i) && (cross_dependency?vlefw_start_q[0]:1'b1)) begin 
                   vlefw_data_d[1] = wdata_i[VLSU1_VD_WD];
                   vlefw_addr_d[1] = waddr_i[VLSU1_VD_WD];
+                  vlefw_reg_d[1]  = vlefw_write_i[VLSU1_VD_WD].FWreg;
                   wvalid_o[VLSU1_VD_WD] = 1'b1;
-                  vlefw_stall_d[1] = 1'b0;
                 end else begin 
                   // No read signal yet, KEEP old buffer value
                   vlefw_data_d[1] = vlefw_data_q[1]; // ← This retains the old value
@@ -320,14 +319,26 @@ module spatz_vrf
                 // First write cycle, store data and mark start
                 vlefw_data_d[1] = wdata_i[VLSU1_VD_WD];
                 vlefw_addr_d[1] = waddr_i[VLSU1_VD_WD];
+                vlefw_reg_d[1]  = vlefw_write_i[VLSU1_VD_WD].FWreg;
                 wvalid_o[VLSU1_VD_WD] = 1'b1;
                 vlefw_start_d[1] = 1'b1;
-                vlefw_stall_d[1] = 1'b0;
               end
             end else begin 
               vlefw_start_d[1] = 1'b0;
+
+              waddr[bank]          = f_vreg(waddr_i[VLSU1_VD_WD]);
+              wdata[bank]          = wdata_i[VLSU1_VD_WD];
+              we[bank]             = 1'b1 & (~vlefw_write_i[VLSU1_VD_WD].en); // No write enable to VRF if forward is enabled (yx)
+              wbe[bank]            = wbe_i[VLSU1_VD_WD];
+              wvalid_o[VLSU1_VD_WD] = 1'b1;
             end
           end 
+        end else if (write_request[bank][VSLDU_VD_WD]) begin
+          waddr[bank]           = f_vreg(waddr_i[VSLDU_VD_WD]);
+          wdata[bank]           = wdata_i[VSLDU_VD_WD];
+          we[bank]              = 1'b1;
+          wbe[bank]             = wbe_i[VSLDU_VD_WD];
+          wvalid_o[VSLDU_VD_WD] = 1'b1;
         end
       end
     end
@@ -360,15 +371,17 @@ module spatz_vrf
       if (read_request[bank][VFU_VS2_RD]) begin
       // Confirm read from which VLSU
 
-        if (vlefw_read_i[VFU_VS2_RD]) begin
-          if (raddr_i[VFU_VS2_RD] == vlefw_addr_q[0]) begin // read from VLSU0 buffer
+        if (vlefw_read_i[VFU_VS2_RD].en) begin
+          // if (raddr_i[VFU_VS2_RD] == vlefw_addr_q[0]) begin // read from VLSU0 buffer
+          if (vlefw_read_i[VFU_VS2_RD].FWreg == vlefw_reg_q[0]) begin // read from VLSU0 buffer
             rdata_o[VFU_VS2_RD] = vlefw_data_q[0];
             if (vlefw_start_q[0]) begin 
               rvalid_o[VFU_VS2_RD] = 1'b1;
             end else begin 
               rvalid_o[VFU_VS2_RD] = 1'b0;
             end
-          end else if (raddr_i[VFU_VS2_RD] == vlefw_addr_q[1]) begin
+          // end else if (raddr_i[VFU_VS2_RD] == vlefw_addr_q[1]) begin
+          end else if (vlefw_read_i[VFU_VS2_RD].FWreg == vlefw_reg_q[1]) begin
             rdata_o[VFU_VS2_RD] = vlefw_data_q[1];
             if (vlefw_start_q[1]) begin 
               rvalid_o[VFU_VS2_RD] = 1'b1;
@@ -395,15 +408,17 @@ module spatz_vrf
 
       // Bank read port 1 - Priority: VFU (1) -> VSLDU
       if (read_request[bank][VFU_VS1_RD]) begin
-        if (vlefw_read_i[VFU_VS1_RD]) begin
-          if (raddr_i[VFU_VS1_RD] == vlefw_addr_q[0]) begin // read from VLSU0 buffer
+        if (vlefw_read_i[VFU_VS1_RD].en) begin
+          // if (raddr_i[VFU_VS1_RD] == vlefw_addr_q[0]) begin // read from VLSU0 buffer
+          if (vlefw_read_i[VFU_VS1_RD].FWreg == vlefw_reg_q[0]) begin // read from VLSU0 buffer
             rdata_o[VFU_VS1_RD] = vlefw_data_q[0];
             if (vlefw_start_q[0]) begin 
               rvalid_o[VFU_VS1_RD] = 1'b1;
             end else begin 
               rvalid_o[VFU_VS1_RD] = 1'b0;
             end
-          end else if (raddr_i[VFU_VS1_RD] == vlefw_addr_q[1]) begin
+          // end else if (raddr_i[VFU_VS1_RD] == vlefw_addr_q[1]) begin
+          end else if (vlefw_read_i[VFU_VS1_RD].FWreg == vlefw_reg_q[1]) begin
             rdata_o[VFU_VS1_RD] = vlefw_data_q[1];
             if (vlefw_start_q[1]) begin 
               rvalid_o[VFU_VS1_RD] = 1'b1;
@@ -427,15 +442,17 @@ module spatz_vrf
       // Bank read port 2 - Priority: VFU (D) -> VLSU
       if (read_request[bank][VFU_VD_RD]) begin
 
-        if (vlefw_read_i[VFU_VD_RD]) begin
-          if (raddr_i[VFU_VD_RD] == vlefw_addr_q[0]) begin // read from VLSU0 buffer
+        if (vlefw_read_i[VFU_VD_RD].en) begin
+          // if (raddr_i[VFU_VD_RD] == vlefw_addr_q[0]) begin // read from VLSU0 buffer
+          if (vlefw_read_i[VFU_VD_RD].FWreg == vlefw_reg_q[0]) begin // read from VLSU0 buffer
             rdata_o[VFU_VD_RD] = vlefw_data_q[0];
             if (vlefw_start_q[0]) begin 
               rvalid_o[VFU_VD_RD] = 1'b1;
             end else begin 
               rvalid_o[VFU_VD_RD] = 1'b0;
             end
-          end else if (raddr_i[VFU_VD_RD] == vlefw_addr_q[1]) begin
+          // end else if (raddr_i[VFU_VD_RD] == vlefw_addr_q[1]) begin
+          end else if (vlefw_read_i[VFU_VD_RD].FWreg == vlefw_reg_q[1]) begin
             rdata_o[VFU_VD_RD] = vlefw_data_q[1];
             if (vlefw_start_q[1]) begin 
               rvalid_o[VFU_VD_RD] = 1'b1;

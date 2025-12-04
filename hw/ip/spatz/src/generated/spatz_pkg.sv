@@ -159,6 +159,11 @@ package spatz_pkg;
     logic       vd_is_src1;
   } vlsu_assignment_t;
 
+  typedef struct packed {
+    logic       en;
+    vreg_t      FWreg;
+  } sb_vlefw_t;
+
   //add the vleforward as a config (yx) 
   typedef struct packed {
     logic keep_vl;

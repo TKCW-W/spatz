@@ -55,9 +55,9 @@ module spatz_controller
     input  logic             [NrWritePorts-1:0]    sb_wrote_result_i,
     output logic             [NrVregfilePorts-1:0] sb_enable_o,
     input  spatz_id_t        [NrVregfilePorts-1:0] sb_id_i,
-    output logic [NrVregfilePorts-NrWritePorts-1:0] sb_vlefw_read_o,  // VLE forward read enable for VRF (yx)
-    output logic             [NrWritePorts-1:0]    sb_vlefw_write_o,  // VLE forward write enable for VRF (yx)
-    
+    output sb_vlefw_t [NrVregfilePorts-NrWritePorts-1:0] sb_vlefw_read_o,  // VLE forward read enable for VRF (yx)
+    output sb_vlefw_t             [NrWritePorts-1:0]    sb_vlefw_write_o,  // VLE forward write enable for VRF (yx)
+    output logic [1:0]                             sb_vlefw_count_o,
     // VLSU assignment decision (yx)
     input vlsu_assignment_t                       vlsu_assignment_i 
   );
@@ -92,6 +92,11 @@ module spatz_controller
   `FF(vlefw_en_q, vlefw_en_d, 1'b0) 
   `FF(FWVreg_q, FWVreg_d, '0) 
 
+  logic [1:0] FWVreg_count_d, FWVreg_count_q; // VLE forward register write count (yx)
+  `FF(FWVreg_count_q, FWVreg_count_d, '0);
+
+  assign sb_vlefw_count_o = FWVreg_count_q; //(yx)
+
   always_comb begin : proc_vcsr
     automatic logic [$clog2(MAXVL):0] vlmax = 0;
 
@@ -100,6 +105,7 @@ module spatz_controller
     vtype_d  = vtype_q;
     vlefw_en_d = vlefw_en_q;
     FWVreg_d = FWVreg_q;
+    FWVreg_count_d = FWVreg_count_q;
 
     if (spatz_req_valid) begin
       // Reset vstart to zero if we have a new non CSR operation
@@ -126,6 +132,7 @@ module spatz_controller
           end else begin
             vlefw_en_d = '1;
             FWVreg_d = spatz_req.rs1; 
+            FWVreg_count_d = $countones(spatz_req.rs1); // Count how many registers are being forwarded (yx)
           end
         end else begin
           vlefw_en_d = '0;
@@ -284,6 +291,8 @@ module spatz_controller
     spatz_id_t                                    id;
     logic      [NrWritePorts-1:0]                write;
     logic      [NrVregfilePorts-NrWritePorts-1:0] read;
+    vreg_t     [NrWritePorts-1:0]                wr_reg;
+    vreg_t     [NrVregfilePorts-NrWritePorts-1:0] rd_reg;
   } vlefw_table_t;
 
   vlefw_table_t [NrParallelInstructions-1:0] vlefw_table_d, vlefw_table_q;
@@ -448,16 +457,20 @@ module spatz_controller
         if (port < NrReadPorts) begin
           // Read port
           if (vlefw_table_q[sb_id_i[port]].read[port]) begin
-            sb_vlefw_read_o[port] = 1'b1;
+            sb_vlefw_read_o[port].en = 1'b1;
+            sb_vlefw_read_o[port].FWreg = vlefw_table_q[sb_id_i[port]].rd_reg[port];
           end else begin 
-            sb_vlefw_read_o[port] = 1'b0;
+            sb_vlefw_read_o[port].en = 1'b0;
+            sb_vlefw_read_o[port].FWreg = '0;
           end
         end else begin
           // Write port
           if (vlefw_table_q[sb_id_i[port]].write[port - NrReadPorts]) begin
-            sb_vlefw_write_o[port - NrReadPorts] = 1'b1;
+            sb_vlefw_write_o[port - NrReadPorts].en = 1'b1;
+            sb_vlefw_write_o[port - NrReadPorts].FWreg = vlefw_table_q[sb_id_i[port]].wr_reg[port - NrReadPorts];
           end else begin 
-            sb_vlefw_write_o[port - NrReadPorts] = 1'b0;
+            sb_vlefw_write_o[port - NrReadPorts].en = 1'b0;
+            sb_vlefw_write_o[port - NrReadPorts].FWreg = '0;
           end
         end
       end
@@ -578,15 +591,18 @@ module spatz_controller
       
       if (vlefw_en_q) begin 
         // Detect if the operand register matches the forward register (yx)
-        vlefw_table_d[spatz_req.id] = '{id: spatz_req.id, write: '0, read: '0};
+        vlefw_table_d[spatz_req.id] = '{id: spatz_req.id, write: '0, read: '0, wr_reg: '0, rd_reg: '0};
         
         if (spatz_req.ex_unit == VFU) begin 
           if ((spatz_req.use_vs1 && FWVreg_q[vreg_t'(spatz_req.vs1)]))
             vlefw_table_d[spatz_req.id].read[SB_VFU_VS1_RD] = 1'b1;
+            vlefw_table_d[spatz_req.id].rd_reg[SB_VFU_VS1_RD] = vreg_t'(spatz_req.vs1);
           if (spatz_req.use_vs2 && FWVreg_q[vreg_t'(spatz_req.vs2)]) 
             vlefw_table_d[spatz_req.id].read[SB_VFU_VS2_RD] = 1'b1;
+            vlefw_table_d[spatz_req.id].rd_reg[SB_VFU_VS2_RD] = vreg_t'(spatz_req.vs2); 
           if (spatz_req.vd_is_src && FWVreg_q[vreg_t'(spatz_req.vd)]) 
             vlefw_table_d[spatz_req.id].read[SB_VFU_VD_RD] = 1'b1;
+            vlefw_table_d[spatz_req.id].rd_reg[SB_VFU_VD_RD] = vreg_t'(spatz_req.vd);
         end 
         // case (spatz_req.ex_unit)
         //   VFU: begin
@@ -644,16 +660,19 @@ module spatz_controller
       if (vlsu_assignment_i.use_vlsu0) begin
         if ((!vlsu_assignment_i.vd_is_src0) && FWVreg_q[vreg_t'(vlsu_assignment_i.spatz_vd0)]) 
           vlefw_table_d[vlsu_assignment_i.spatz_req_id0].write[SB_VLSU0_VD_WD-(NrVregfilePorts-NrWritePorts)] = 1'b1;
+          vlefw_table_d[vlsu_assignment_i.spatz_req_id0].wr_reg[SB_VLSU0_VD_WD-(NrVregfilePorts-NrWritePorts)] = vreg_t'(vlsu_assignment_i.spatz_vd0);
       end else begin 
         vlefw_table_d[vlsu_assignment_i.spatz_req_id0].write[SB_VLSU0_VD_WD-(NrVregfilePorts-NrWritePorts)] = 1'b0; 
-
+        vlefw_table_d[vlsu_assignment_i.spatz_req_id0].wr_reg[SB_VLSU0_VD_WD-(NrVregfilePorts-NrWritePorts)] = '0;
       end
       
       if (vlsu_assignment_i.use_vlsu1) begin 
         if ((!vlsu_assignment_i.vd_is_src1) && FWVreg_q[vreg_t'(vlsu_assignment_i.spatz_vd1)]) 
           vlefw_table_d[vlsu_assignment_i.spatz_req_id1].write[SB_VLSU1_VD_WD-(NrVregfilePorts-NrWritePorts)] = 1'b1; 
+          vlefw_table_d[vlsu_assignment_i.spatz_req_id1].wr_reg[SB_VLSU1_VD_WD-(NrVregfilePorts-NrWritePorts)] = vreg_t'(vlsu_assignment_i.spatz_vd1);
       end else begin 
         vlefw_table_d[vlsu_assignment_i.spatz_req_id1].write[SB_VLSU1_VD_WD-(NrVregfilePorts-NrWritePorts)] = 1'b0;
+        vlefw_table_d[vlsu_assignment_i.spatz_req_id1].wr_reg[SB_VLSU1_VD_WD-(NrVregfilePorts-NrWritePorts)] = '0;
       end
           
     end
