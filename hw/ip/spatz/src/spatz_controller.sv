@@ -373,10 +373,12 @@ module spatz_controller
       end      
     end  
 
-        // Grant access to VRF read ports for VFU when there is at least one valid data from VLSU (yx)
-    for (int unsigned port = 0; port < 3; port++) begin 
-      sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_trigger_d) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
-    end   
+    // Grant access to VRF read ports for VFU when there is at least one valid data from VLSU (yx)
+    if (vlefw_en_q) begin
+      for (int unsigned port = 0; port < 3; port++) begin 
+        sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_trigger_q) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
+      end   
+    end
 
     // QW: Initialise or update vlsu0 counter
     if (sb_enable_o[SB_VLSU0_VD_WD]) begin

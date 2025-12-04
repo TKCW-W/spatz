@@ -83,7 +83,7 @@ int main() {
 
   uint32_t vle_vreg = 0x00000101;
   // uint32_t vle_vreg = 0x00000000;
-  asm volatile("csrrw x0, 0x7c2, %0" :: "r"(vle_vreg));
+  //asm volatile("csrrw x0, 0x7c2, %0" :: "r"(vle_vreg));
 
   // Start dump
   if (cid == 0)
