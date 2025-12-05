@@ -391,7 +391,7 @@ module spatz_vrf
 
         if (vlefw_read_i[VFU_VS2_RD].en) begin
           // if (raddr_i[VFU_VS2_RD] == vlefw_addr_q[0]) begin // read from VLSU0 buffer
-          if (vlefw_read_i[VFU_VS2_RD].FWreg == vlefw_reg_q[0]) begin // read from VLSU0 buffer
+          if ((vlefw_read_i[VFU_VS2_RD].FWreg == vlefw_reg_q[0]) && (raddr_i[VFU_VS2_RD] == vlefw_addr_q[0])) begin // read from VLSU0 buffer
             rdata_o[VFU_VS2_RD] = vlefw_data_q[0];
             if (vlefw_start_q[0]) begin 
               rvalid_o[VFU_VS2_RD] = 1'b1;
@@ -399,7 +399,7 @@ module spatz_vrf
               rvalid_o[VFU_VS2_RD] = 1'b0;
             end
           // end else if (raddr_i[VFU_VS2_RD] == vlefw_addr_q[1]) begin
-          end else if (vlefw_read_i[VFU_VS2_RD].FWreg == vlefw_reg_q[1]) begin
+          end else if ((vlefw_read_i[VFU_VS2_RD].FWreg == vlefw_reg_q[1]) && (raddr_i[VFU_VS2_RD] == vlefw_addr_q[1])) begin
             rdata_o[VFU_VS2_RD] = vlefw_data_q[1];
             if (vlefw_start_q[1]) begin 
               rvalid_o[VFU_VS2_RD] = 1'b1;
@@ -428,7 +428,7 @@ module spatz_vrf
       if (read_request[bank][VFU_VS1_RD]) begin
         if (vlefw_read_i[VFU_VS1_RD].en) begin
           // if (raddr_i[VFU_VS1_RD] == vlefw_addr_q[0]) begin // read from VLSU0 buffer
-          if (vlefw_read_i[VFU_VS1_RD].FWreg == vlefw_reg_q[0]) begin // read from VLSU0 buffer
+          if ((vlefw_read_i[VFU_VS1_RD].FWreg == vlefw_reg_q[0]) && (raddr_i[VFU_VS1_RD] == vlefw_addr_q[0])) begin // read from VLSU0 buffer
             rdata_o[VFU_VS1_RD] = vlefw_data_q[0];
             if (vlefw_start_q[0]) begin 
               rvalid_o[VFU_VS1_RD] = 1'b1;
@@ -436,7 +436,7 @@ module spatz_vrf
               rvalid_o[VFU_VS1_RD] = 1'b0;
             end
           // end else if (raddr_i[VFU_VS1_RD] == vlefw_addr_q[1]) begin
-          end else if (vlefw_read_i[VFU_VS1_RD].FWreg == vlefw_reg_q[1]) begin
+          end else if ((vlefw_read_i[VFU_VS1_RD].FWreg == vlefw_reg_q[1]) && (raddr_i[VFU_VS1_RD] == vlefw_addr_q[1]))begin
             rdata_o[VFU_VS1_RD] = vlefw_data_q[1];
             if (vlefw_start_q[1]) begin 
               rvalid_o[VFU_VS1_RD] = 1'b1;
@@ -462,7 +462,7 @@ module spatz_vrf
 
         if (vlefw_read_i[VFU_VD_RD].en) begin
           // if (raddr_i[VFU_VD_RD] == vlefw_addr_q[0]) begin // read from VLSU0 buffer
-          if (vlefw_read_i[VFU_VD_RD].FWreg == vlefw_reg_q[0]) begin // read from VLSU0 buffer
+          if ((vlefw_read_i[VFU_VD_RD].FWreg == vlefw_reg_q[0]) && (raddr_i[VFU_VD_RD] == vlefw_addr_q[0])) begin // read from VLSU0 buffer
             rdata_o[VFU_VD_RD] = vlefw_data_q[0];
             if (vlefw_start_q[0]) begin 
               rvalid_o[VFU_VD_RD] = 1'b1;
@@ -470,7 +470,7 @@ module spatz_vrf
               rvalid_o[VFU_VD_RD] = 1'b0;
             end
           // end else if (raddr_i[VFU_VD_RD] == vlefw_addr_q[1]) begin
-          end else if (vlefw_read_i[VFU_VD_RD].FWreg == vlefw_reg_q[1]) begin
+          end else if ((vlefw_read_i[VFU_VD_RD].FWreg == vlefw_reg_q[1]) && (raddr_i[VFU_VD_RD] == vlefw_addr_q[1]))begin
             rdata_o[VFU_VD_RD] = vlefw_data_q[1];
             if (vlefw_start_q[1]) begin 
               rvalid_o[VFU_VD_RD] = 1'b1;
