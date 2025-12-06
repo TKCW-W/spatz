@@ -225,7 +225,8 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
   logic      [NrReadPorts-1:0]  vrf_rvalid;
   sb_vlefw_t [NrReadPorts-1:0]  vrf_vlefw_read; //VLE forward read signal (yx)
 
-  logic [1:0] sb_vlefw_count;
+  logic       cross_dep;
+  logic [1:0] vlefw_instn_switch;
 
   spatz_vrf #(
     .NrReadPorts (NrReadPorts ),
@@ -234,7 +235,8 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     .clk_i           (clk_i         ),
     .rst_ni          (rst_ni        ),
     .testmode_i      (testmode_i    ),
-    .sb_vlefw_count_i(sb_vlefw_count), //(yx)
+    .sb_cross_dep_i  (cross_dep), //(yx)
+    .vlefw_instn_switch_i(vlefw_instn_switch), //(yx)
     // Write Ports
     .waddr_i         (vrf_waddr_buf ),
     .wdata_i         (vrf_wdata_buf ),
@@ -328,7 +330,8 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     .vlsu_assignment_i(vlsu_assignment   ),
     .sb_vlefw_read_o  (vrf_vlefw_read  ),
     .sb_vlefw_write_o (vrf_vlefw_write ),
-    .sb_vlefw_count_o(sb_vlefw_count  )
+    .sb_cross_dep_o   (cross_dep  ),
+    .vlefw_instn_switch_o(vlefw_instn_switch)
 
   );
 

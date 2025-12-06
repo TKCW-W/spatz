@@ -81,10 +81,12 @@ int main() {
   // Wait for all cores to finish
   snrt_cluster_hw_barrier();
 
-  uint32_t vle_vreg = 0x00000101;
-  //uint32_t vle_vreg = 0x00000000;
-  asm volatile("csrrw x0, 0x7c2, %0" :: "r"(vle_vreg));
-
+  uint32_t vle_vreg0 = 0x00000001;
+  uint32_t vle_vreg1 = 0x00000100;
+  asm volatile("csrrw x0, 0x7c2, %0" :: "r"(vle_vreg0));
+  asm volatile("csrrw x0, 0x7c2, %0" :: "r"(vle_vreg0));
+  
+  
   // Start dump
   if (cid == 0)
     start_kernel();

@@ -16,7 +16,8 @@ module spatz_vrf
     input  logic                         clk_i,
     input  logic                         rst_ni,
     input  logic                         testmode_i,
-    input  logic [1:0]                   sb_vlefw_count_i, //(yx)
+    input  logic                         sb_cross_dep_i, //(yx)
+    input  logic [1:0]                   vlefw_instn_switch_i, //(yx)
     // Write ports
     input  vrf_addr_t [NrWritePorts-1:0] waddr_i,
     input  vrf_data_t [NrWritePorts-1:0] wdata_i,
@@ -108,9 +109,13 @@ module spatz_vrf
   vreg_t  [1:0]  vlefw_reg_d, vlefw_reg_q;
   `FF(vlefw_reg_q, vlefw_reg_d, '0);
 
-  // Check if there is a dependency where the 2 VLSUs need to wait for each other 
-  logic cross_dependency;
-  assign cross_dependency = 0;//(sb_vlefw_count_i == 2'd2) ? 1'b1 : 1'b0; //(yx)
+  logic [1:0] vlefw_instn_switch_d, vlefw_instn_switch_q; //(yx)
+  `FF(vlefw_instn_switch_q, vlefw_instn_switch_d, '1);
+
+  assign vlefw_instn_switch_d[0] = vlefw_write_i[VLSU0_VD_WD].en ? vlefw_instn_switch_i[0] : vlefw_instn_switch_q[0]; //(yx)
+  assign vlefw_instn_switch_d[1] = vlefw_write_i[VLSU1_VD_WD].en ? vlefw_instn_switch_i[1] : vlefw_instn_switch_q[1]; //(yx)
+
+
 
   ///////////////////
   // Write Mapping //
@@ -210,7 +215,7 @@ module spatz_vrf
 
             if (vlefw_write_i[VLSU0_VD_WD].en) begin 
               if (vlefw_start_q[0]) begin 
-                if ((f_match(vlefw_write_i[VLSU0_VD_WD], vlefw_read_i)) && (cross_dependency?vlefw_start_q[1]:1'b1)) begin
+                if ((f_match(vlefw_write_i[VLSU0_VD_WD], vlefw_read_i)) && (sb_cross_dep_i?vlefw_start_q[1]:1'b1)) begin
                   vlefw_data_d[0] = wdata_i[VLSU0_VD_WD];
                   vlefw_addr_d[0] = waddr_i[VLSU0_VD_WD];
                   vlefw_reg_d[0]  = vlefw_write_i[VLSU0_VD_WD].FWreg;
@@ -223,11 +228,20 @@ module spatz_vrf
                 end 
               end else begin 
                 // First write cycle, store data and mark start
-                vlefw_data_d[0] = wdata_i[VLSU0_VD_WD];
-                vlefw_addr_d[0] = waddr_i[VLSU0_VD_WD];
-                vlefw_reg_d[0]  = vlefw_write_i[VLSU0_VD_WD].FWreg;
-                wvalid_o[VLSU0_VD_WD] = 1'b1;
-                vlefw_start_d[0] = 1'b1;
+                if (sb_cross_dep_i? 1'b1 :(vlefw_instn_switch_d[0] != vlefw_instn_switch_q[0])) begin
+                  // Fresh start of the new instruction 
+                  vlefw_data_d[0] = wdata_i[VLSU0_VD_WD];
+                  vlefw_addr_d[0] = waddr_i[VLSU0_VD_WD];
+                  vlefw_reg_d[0]  = vlefw_write_i[VLSU0_VD_WD].FWreg;
+                  wvalid_o[VLSU0_VD_WD] = 1'b1;
+                  vlefw_start_d[0] = 1'b1;
+                end else begin 
+                  // Stall the LSU write if there was an interruption of the same instruction 
+                  vlefw_data_d[0] = vlefw_data_q[0]; 
+                  vlefw_addr_d[0] = vlefw_addr_q[0];
+                  wvalid_o[VLSU0_VD_WD] = 1'b0; 
+                  vlefw_start_d[0] = 1'b1;
+                end
               end
             end else begin 
               // If write request from LSU is invalid, clear the start bit to indicate disruptions in writing 
@@ -239,7 +253,7 @@ module spatz_vrf
 
             if (vlefw_write_i[VLSU1_VD_WD].en) begin 
               if (vlefw_start_q[1]) begin 
-                if (f_match(vlefw_write_i[VLSU1_VD_WD], vlefw_read_i) && (cross_dependency?vlefw_start_q[0]:1'b1)) begin
+                if (f_match(vlefw_write_i[VLSU1_VD_WD], vlefw_read_i) && (sb_cross_dep_i?vlefw_start_q[0]:1'b1)) begin
                   vlefw_data_d[1] = wdata_i[VLSU1_VD_WD];
                   vlefw_addr_d[1] = waddr_i[VLSU1_VD_WD];
                   vlefw_reg_d[1]  = vlefw_write_i[VLSU1_VD_WD].FWreg;
@@ -252,11 +266,20 @@ module spatz_vrf
                 end 
               end else begin 
                 // First write cycle, store data and mark start
-                vlefw_data_d[1] = wdata_i[VLSU1_VD_WD];
-                vlefw_addr_d[1] = waddr_i[VLSU1_VD_WD];
-                vlefw_reg_d[1]  = vlefw_write_i[VLSU1_VD_WD].FWreg;
-                wvalid_o[VLSU1_VD_WD] = 1'b1;
-                vlefw_start_d[1] = 1'b1;
+                if (sb_cross_dep_i?1'b1:(vlefw_instn_switch_d[1] != vlefw_instn_switch_q[1])) begin
+                  // Fresh start of the new instruction 
+                  vlefw_data_d[1] = wdata_i[VLSU1_VD_WD];
+                  vlefw_addr_d[1] = waddr_i[VLSU1_VD_WD];
+                  vlefw_reg_d[1]  = vlefw_write_i[VLSU1_VD_WD].FWreg;
+                  wvalid_o[VLSU1_VD_WD] = 1'b1;
+                  vlefw_start_d[1] = 1'b1;
+                end else begin 
+                  // Stall the LSU write if there was an interruption of the same instruction 
+                  vlefw_data_d[1] = vlefw_data_q[1]; 
+                  vlefw_addr_d[1] = vlefw_addr_q[1];
+                  wvalid_o[VLSU1_VD_WD] = 1'b0; 
+                  vlefw_start_d[1] = 1'b1;
+                end
               end
             end else begin 
               // If write request from LSU is invalid, clear the start bit to indicate disruptions in writing 
@@ -275,7 +298,7 @@ module spatz_vrf
               //VLE forward, store into buffer (yx)
               if (vlefw_write_i[VLSU0_VD_WD].en) begin 
                 if (vlefw_start_q[0]) begin 
-                  if ((f_match(vlefw_write_i[VLSU0_VD_WD], vlefw_read_i)) && (cross_dependency?vlefw_start_q[1]:1'b1)) begin
+                  if ((f_match(vlefw_write_i[VLSU0_VD_WD], vlefw_read_i)) && (sb_cross_dep_i?vlefw_start_q[1]:1'b1)) begin
                     vlefw_data_d[0] = wdata_i[VLSU0_VD_WD];
                     vlefw_addr_d[0] = waddr_i[VLSU0_VD_WD];
                     vlefw_reg_d[0]  = vlefw_write_i[VLSU0_VD_WD].FWreg;
@@ -288,11 +311,20 @@ module spatz_vrf
                   end 
                 end else begin 
                   // First write cycle, store data and mark start
-                  vlefw_data_d[0] = wdata_i[VLSU0_VD_WD];
-                  vlefw_addr_d[0] = waddr_i[VLSU0_VD_WD];
-                  vlefw_reg_d[0]  = vlefw_write_i[VLSU0_VD_WD].FWreg;
-                  wvalid_o[VLSU0_VD_WD] = 1'b1;
-                  vlefw_start_d[0] = 1'b1;
+                  if (sb_cross_dep_i?1'b1:(vlefw_instn_switch_d[0] != vlefw_instn_switch_q[0])) begin
+                    // Fresh start of the new instruction 
+                    vlefw_data_d[0] = wdata_i[VLSU0_VD_WD];
+                    vlefw_addr_d[0] = waddr_i[VLSU0_VD_WD];
+                    vlefw_reg_d[0]  = vlefw_write_i[VLSU0_VD_WD].FWreg;
+                    wvalid_o[VLSU0_VD_WD] = 1'b1;
+                    vlefw_start_d[0] = 1'b1;
+                  end else begin 
+                    // Stall the LSU write if there was an interruption of the same instruction 
+                    vlefw_data_d[0] = vlefw_data_q[0]; 
+                    vlefw_addr_d[0] = vlefw_addr_q[0];
+                    wvalid_o[VLSU0_VD_WD] = 1'b0; 
+                    vlefw_start_d[0] = 1'b1;
+                  end
                 end
               end else begin 
                 // If write request from LSU is invalid, clear the start bit to indicate disruptions in writing 
@@ -310,7 +342,7 @@ module spatz_vrf
               //VLE forward, store into buffer (yx)
                 if (vlefw_write_i[VLSU1_VD_WD].en) begin 
                   if (vlefw_start_q[1]) begin 
-                    if (f_match(vlefw_write_i[VLSU1_VD_WD], vlefw_read_i) && (cross_dependency?vlefw_start_q[0]:1'b1)) begin
+                    if (f_match(vlefw_write_i[VLSU1_VD_WD], vlefw_read_i) && (sb_cross_dep_i?vlefw_start_q[0]:1'b1)) begin
                       vlefw_data_d[1] = wdata_i[VLSU1_VD_WD];
                       vlefw_addr_d[1] = waddr_i[VLSU1_VD_WD];
                       vlefw_reg_d[1]  = vlefw_write_i[VLSU1_VD_WD].FWreg;
@@ -323,11 +355,20 @@ module spatz_vrf
                     end 
                   end else begin 
                     // First write cycle, store data and mark start
-                    vlefw_data_d[1] = wdata_i[VLSU1_VD_WD];
-                    vlefw_addr_d[1] = waddr_i[VLSU1_VD_WD];
-                    vlefw_reg_d[1]  = vlefw_write_i[VLSU1_VD_WD].FWreg;
-                    wvalid_o[VLSU1_VD_WD] = 1'b1;
-                    vlefw_start_d[1] = 1'b1;
+                    if (sb_cross_dep_i?1'b1:(vlefw_instn_switch_d[1] != vlefw_instn_switch_q[1])) begin
+                      // Fresh start of the new instruction
+                      vlefw_data_d[1] = wdata_i[VLSU1_VD_WD];
+                      vlefw_addr_d[1] = waddr_i[VLSU1_VD_WD];
+                      vlefw_reg_d[1]  = vlefw_write_i[VLSU1_VD_WD].FWreg;
+                      wvalid_o[VLSU1_VD_WD] = 1'b1;
+                      vlefw_start_d[1] = 1'b1;
+                    end else begin
+                      // Stall the LSU write if there was an interruption of the same instruction 
+                      vlefw_data_d[1] = vlefw_data_q[1]; 
+                      vlefw_addr_d[1] = vlefw_addr_q[1];
+                      wvalid_o[VLSU1_VD_WD] = 1'b0; 
+                      vlefw_start_d[1] = 1'b1;
+                    end
                   end
                 end else begin 
                   // If write request from LSU is invalid, clear the start bit to indicate disruptions in writing 

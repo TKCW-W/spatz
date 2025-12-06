@@ -56,8 +56,9 @@ module spatz_controller
     output logic             [NrVregfilePorts-1:0] sb_enable_o,
     input  spatz_id_t        [NrVregfilePorts-1:0] sb_id_i,
     output sb_vlefw_t [NrVregfilePorts-NrWritePorts-1:0] sb_vlefw_read_o,  // VLE forward read enable for VRF (yx)
-    output sb_vlefw_t             [NrWritePorts-1:0]    sb_vlefw_write_o,  // VLE forward write enable for VRF (yx)
-    output logic [1:0]                             sb_vlefw_count_o,
+    output sb_vlefw_t        [NrWritePorts-1:0]    sb_vlefw_write_o,  // VLE forward write enable for VRF (yx)
+    output logic             [1:0]                 vlefw_instn_switch_o,        // Indicate an instruction boundary for switching (yx)
+    output logic [1:0]                             sb_cross_dep_o,
     // VLSU assignment decision (yx)
     input vlsu_assignment_t                       vlsu_assignment_i 
   );
@@ -92,10 +93,10 @@ module spatz_controller
   `FF(vlefw_en_q, vlefw_en_d, 1'b0) 
   `FF(FWVreg_q, FWVreg_d, '0) 
 
-  logic [1:0] FWVreg_count_d, FWVreg_count_q; // VLE forward register write count (yx)
-  `FF(FWVreg_count_q, FWVreg_count_d, '0);
+  logic [1:0] cross_dep_d, cross_dep_q; // VLE forward register write count (yx)
+  `FF(cross_dep_q, cross_dep_d, '0);
 
-  assign sb_vlefw_count_o = FWVreg_count_q; //(yx)
+  assign sb_cross_dep_o = cross_dep_q; //(yx)
 
   always_comb begin : proc_vcsr
     automatic logic [$clog2(MAXVL):0] vlmax = 0;
@@ -105,7 +106,7 @@ module spatz_controller
     vtype_d  = vtype_q;
     vlefw_en_d = vlefw_en_q;
     FWVreg_d = FWVreg_q;
-    FWVreg_count_d = FWVreg_count_q;
+    cross_dep_d = cross_dep_q;
 
     if (spatz_req_valid) begin
       // Reset vstart to zero if we have a new non CSR operation
@@ -127,16 +128,21 @@ module spatz_controller
         // Disable if the same register is written again
         // Set the forward register from rs1 of CSRRW
         if (spatz_req.op_cfg.vleforward) begin
-          if (vlefw_en_q && (FWVreg_q == '0)) begin
-            vlefw_en_d = '0;
+          if (vlefw_en_q) begin
+            if (FWVreg_q == '0) begin 
+              vlefw_en_d = '0;
+            end else if (($countones(FWVreg_q) == 1'b1) && ($countones(spatz_req.rs1) == 1'b1)) begin 
+              cross_dep_d = 1'b0;
+              FWVreg_d = FWVreg_q | spatz_req.rs1;
+            end 
           end else begin
             vlefw_en_d = '1;
             FWVreg_d = spatz_req.rs1; 
-            FWVreg_count_d = $countones(spatz_req.rs1); // Count how many registers are being forwarded (yx)
+            if ($countones(spatz_req.rs1) == 2'd2) begin
+              cross_dep_d = 1'b1; // Count how many registers are being forwarded (yx)
+            end 
           end
-        end else begin
-          vlefw_en_d = '0;
-        end
+        end 
       end
 
       // Change vtype and vl if we have a config instruction
@@ -318,6 +324,11 @@ module spatz_controller
   // Define the read ports (yx) 
   localparam int NrReadPorts = NrVregfilePorts - NrWritePorts;
 
+  logic [1:0] vlefw_instn_switch_d, vlefw_instn_switch_q; //(yx)
+  `FF(vlefw_instn_switch_q, vlefw_instn_switch_d, '0);
+
+  assign vlefw_instn_switch_o = vlefw_instn_switch_q; //(yx)
+
   always_comb begin : scoreboard
     // Maintain stated
     read_table_d             = read_table_q;
@@ -340,6 +351,7 @@ module spatz_controller
     vlefw_table_d            = vlefw_table_q; //(yx)
     sb_vlefw_read_o          = '0; //(yx)
     sb_vlefw_write_o         = '0; //(yx)
+    vlefw_instn_switch_d     = vlefw_instn_switch_q; //(yx)
     wrote_result_trigger_d   = wrote_result_trigger_q; 
 
     // Nobody wrote to the VRF yet
@@ -413,30 +425,31 @@ module spatz_controller
     end
 
     // QW: VFU write enable logic
-    // if (|scoreboard_q[current_id_vfu].deps) begin
-    //   // Ensure VFU and VLSUs are aligned
-    //   if (scoreboard_q[current_id_vfu].deps[vlsu0_count_q.id] && scoreboard_q[current_id_vfu].deps[vlsu1_count_q.id] && counter_en_d[0] && counter_en_d[1]) begin
-    //     if(vlsu0_count_q.num_written > vfu_count_q.num_written && vlsu1_count_q.num_written > vfu_count_q.num_written) begin
-    //       sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && !scoreboard_q[current_id_vfu].prevent_chaining;
-    //     end
-    //   end else if (scoreboard_q[current_id_vfu].deps[vlsu0_count_q.id] && !scoreboard_q[current_id_vfu].deps[vlsu1_count_q.id] && counter_en_d[0]) begin //vlsu1 completes
-    //     if(vlsu0_count_q.num_written > vfu_count_q.num_written) begin
-    //       sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && !scoreboard_q[current_id_vfu].prevent_chaining;     
-    //     end
-    //   end else if (!scoreboard_q[current_id_vfu].deps[vlsu0_count_q.id] && scoreboard_q[current_id_vfu].deps[vlsu1_count_q.id] && counter_en_d[1]) begin //vlsu0 completes
-    //     if(vlsu1_count_q.num_written > vfu_count_q.num_written) begin
-    //       sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && !scoreboard_q[current_id_vfu].prevent_chaining;      
-    //     end
-    //   end else begin // VFU depends on other instructions, use original grant
-    //     sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining);
-    //   end
+    if (cross_dep_q) begin
+      if (|scoreboard_q[current_id_vfu].deps) begin
+        // Ensure VFU and VLSUs are aligned
+        if (scoreboard_q[current_id_vfu].deps[vlsu0_count_q.id] && scoreboard_q[current_id_vfu].deps[vlsu1_count_q.id] && counter_en_d[0] && counter_en_d[1]) begin
+          if(vlsu0_count_q.num_written > vfu_count_q.num_written && vlsu1_count_q.num_written > vfu_count_q.num_written) begin
+            sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && !scoreboard_q[current_id_vfu].prevent_chaining;
+          end
+        end else if (scoreboard_q[current_id_vfu].deps[vlsu0_count_q.id] && !scoreboard_q[current_id_vfu].deps[vlsu1_count_q.id] && counter_en_d[0]) begin //vlsu1 completes
+          if(vlsu0_count_q.num_written > vfu_count_q.num_written) begin
+            sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && !scoreboard_q[current_id_vfu].prevent_chaining;     
+          end
+        end else if (!scoreboard_q[current_id_vfu].deps[vlsu0_count_q.id] && scoreboard_q[current_id_vfu].deps[vlsu1_count_q.id] && counter_en_d[1]) begin //vlsu0 completes
+          if(vlsu1_count_q.num_written > vfu_count_q.num_written) begin
+            sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && !scoreboard_q[current_id_vfu].prevent_chaining;      
+          end
+        end else begin // VFU depends on other instructions, use original grant
+          sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining);
+        end
 
-    // end else begin // VFU has no dependencies
-    //   sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining);  
-    // end
-
+      end else begin // VFU has no dependencies
+        sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining);  
+      end
+    end else begin // No cross depedency, use original grant
       sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining);  
-
+    end
 
     // QW: Initialise or update vfu counter
     // Initialise when the Read Ports track new ID, update only when Write Port track the same ID (new instruction)
@@ -544,6 +557,7 @@ module spatz_controller
       wrote_result_narrowing_d[vlsu_rsp_i[0].id] = 1'b0;
       vlefw_table_d[vlsu_rsp_i[0].id]            = '0; // clear the forward tracking with scoreboard (yx)
       wrote_result_trigger_d[sb_id_i[SB_VLSU0_VD_WD]]       = 1'b0; // Clear the chaining ready trigger with the scoreboard (yx)
+      vlefw_instn_switch_d[0] = ~vlefw_instn_switch_q[0]; //(yx)
       for (int unsigned insn = 0; insn < NrParallelInstructions; insn++)
         scoreboard_d[insn].deps[vlsu_rsp_i[0].id] = 1'b0;
 
@@ -566,6 +580,8 @@ module spatz_controller
       wrote_result_narrowing_d[vlsu_rsp_i[1].id] = 1'b0;
       vlefw_table_d[vlsu_rsp_i[1].id]            = '0; // clear the forward tracking with scoreboard (yx)
       wrote_result_trigger_d[sb_id_i[SB_VLSU1_VD_WD]]       = 1'b0; // Clear the chaining ready trigger with the scoreboard (yx)
+      vlefw_instn_switch_d[1] = ~vlefw_instn_switch_q[1]; //(yx)
+
       for (int unsigned insn = 0; insn < NrParallelInstructions; insn++)
         scoreboard_d[insn].deps[vlsu_rsp_i[1].id] = 1'b0;
 
