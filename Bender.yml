@@ -129,6 +129,7 @@ sources:
     - hw/ip/spatz/src/spatz_decoder.sv
     - hw/ip/spatz/src/spatz_vlsu_core.sv
     - hw/ip/spatz/src/spatz_simd_lane.sv
+    - hw/ip/spatz/src/spatz_stream.sv    
     - target: fpga
       files:
         - hw/ip/spatz/src/vregfile_fpga.sv
