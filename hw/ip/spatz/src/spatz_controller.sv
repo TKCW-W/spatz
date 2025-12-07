@@ -59,7 +59,10 @@ module spatz_controller
     output logic             [NrWritePorts-1:0]    sb_vlefw_write_o,  // VLE forward write enable for VRF (yx)
     
     // VLSU assignment decision (yx)
-    input vlsu_assignment_t                       vlsu_assignment_i 
+    input  vlsu_assignment_t                       vlsu_assignment_i,
+
+    // VRF Streaming enabling forward (QW)
+    output logic                                   vlefw_en_o
   );
 
 // Include FF
@@ -91,6 +94,9 @@ module spatz_controller
 
   `FF(vlefw_en_q, vlefw_en_d, 1'b0) 
   `FF(FWVreg_q, FWVreg_d, '0) 
+
+  // QW: forward enabling streaming information to VRF
+  assign vlefw_en_o = vlefw_en_q;
 
   always_comb begin : proc_vcsr
     automatic logic [$clog2(MAXVL):0] vlmax = 0;
@@ -364,7 +370,7 @@ module spatz_controller
       end      
     end  
 
-        // Grant access to VRF read ports for VFU when there is at least one valid data from VLSU (yx)
+    // Grant access to VRF read ports for VFU when there is at least one valid data from VLSU (yx)
     if (vlefw_en_q) begin
       for (int unsigned port = 0; port < 3; port++) begin 
         sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_trigger_d) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);

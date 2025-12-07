@@ -210,6 +210,8 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
   /////////
   // VRF //
   /////////
+  // QW: Forward stream enable to VRF from SB
+  logic vlefw_en;
 
   // Write ports
   vrf_addr_t [NrWritePorts-1:0] vrf_waddr, vrf_waddr_buf;
@@ -238,7 +240,6 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     .we_i            (vrf_we        ),
     .wbe_i           (vrf_wbe_buf   ),
     .wvalid_o        (vrf_wvalid    ),
-    .vlefw_write_i   (vrf_vlefw_write), // VLE Forward write signal (yx)
   `ifdef BUF_FPU
     .fpu_buf_usage_i (vfu_buf_usage ),
   `endif
@@ -247,6 +248,9 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     .re_i            (vrf_re        ),
     .rdata_o         (vrf_rdata     ),
     .rvalid_o        (vrf_rvalid    ),
+    // Streaming
+    .vlefw_en_i      (vlefw_en), //QW
+    .vlefw_write_i   (vrf_vlefw_write), // VLE Forward write signal (yx)
     .vlefw_read_i    (vrf_vlefw_read) // VLE Forward read signal (yx)
   );
 
@@ -320,6 +324,7 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     .sb_wrote_result_i(vrf_wvalid        ),
     .sb_enable_i      ({sb_we_buf, sb_re}),
     .sb_enable_o      ({vrf_we, vrf_re}  ),
+    .vlefw_en_o       (vlefw_en),
 
     // VLSU assignment signal input from the vlsu wrapper 
     .vlsu_assignment_i(vlsu_assignment   ),
