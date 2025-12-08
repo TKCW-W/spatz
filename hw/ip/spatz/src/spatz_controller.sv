@@ -58,7 +58,7 @@ module spatz_controller
     output sb_vlefw_t [NrVregfilePorts-NrWritePorts-1:0] sb_vlefw_read_o,  // VLE forward read enable for VRF (yx)
     output sb_vlefw_t        [NrWritePorts-1:0]    sb_vlefw_write_o,  // VLE forward write enable for VRF (yx)
     output logic             [1:0]                 vlefw_instn_switch_o,        // Indicate an instruction boundary for switching (yx)
-    output logic [1:0]                             sb_cross_dep_o,
+    output logic                                   sb_cross_dep_o,
     // VLSU assignment decision (yx)
     input vlsu_assignment_t                       vlsu_assignment_i 
   );
@@ -93,7 +93,7 @@ module spatz_controller
   `FF(vlefw_en_q, vlefw_en_d, 1'b0) 
   `FF(FWVreg_q, FWVreg_d, '0) 
 
-  logic [1:0] cross_dep_d, cross_dep_q; // VLE forward register write count (yx)
+  logic cross_dep_d, cross_dep_q; // VLE forward register write count (yx)
   `FF(cross_dep_q, cross_dep_d, '0);
 
   assign sb_cross_dep_o = cross_dep_q; //(yx)
