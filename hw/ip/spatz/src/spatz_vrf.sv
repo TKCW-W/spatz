@@ -89,9 +89,9 @@ module spatz_vrf
   vrf_addr_t [1:0] stream_waddr;
   vrf_data_t [1:0] stream_wdata;
   logic      [1:0] stream_wvalid;
-  vrf_addr_t [1:0] stream_raddr;
-  vrf_data_t [1:0] stream_rdata;
-  logic      [1:0] stream_rvalid;
+  vrf_addr_t [2:0] stream_raddr; // faxpy would use VFU_VD_RD to stream
+  vrf_data_t [2:0] stream_rdata;
+  logic      [2:0] stream_rvalid;
 
   always_comb begin
     if (vlefw_en_i) begin
@@ -102,6 +102,7 @@ module spatz_vrf
       
       stream_raddr[0] = raddr_i[VFU_VS2_RD];
       stream_raddr[1] = raddr_i[VFU_VS1_RD];
+      stream_raddr[2] = raddr_i[VFU_VD_RD];
     end else begin
       stream_waddr = '{default: '0};
       stream_wdata = '{default: '0};
@@ -254,8 +255,10 @@ module spatz_vrf
   //////////////////
 
   // Streaming is only active for VFU when enabled and VFU requests stream reads
-  logic stream_active;
-  assign stream_active = vlefw_en_i && (|vlefw_read_i);
+  logic [2:0] stream_active;
+  assign stream_active[0] = vlefw_en_i && vlefw_read_i[VFU_VS2_RD];
+  assign stream_active[1] = vlefw_en_i && vlefw_read_i[VFU_VS1_RD];
+  assign stream_active[2] = vlefw_en_i && vlefw_read_i[VFU_VD_RD];
 
   logic [NrVRFBanks-1:0][NrReadPorts-1:0] read_request;
   always_comb begin: gen_read_request
@@ -263,7 +266,18 @@ module spatz_vrf
       for (int port = 0; port < NrReadPorts; port++) begin
         read_request[bank][port] = re_i[port] && f_bank(raddr_i[port]) == bank;
         // Block VFU VS2 and VS1 read requests when VFU actively requests stream reads
-        if ((port == VFU_VS2_RD || port == VFU_VS1_RD) && stream_active) begin
+        // if ((port == VFU_VS2_RD || port == VFU_VS1_RD) && stream_active) begin
+        //   read_request[bank][port] = 1'b0;
+        // end
+        if (port == VFU_VS2_RD && vlefw_read_i[VFU_VS2_RD]) begin
+          read_request[bank][port] = 1'b0;
+        end
+
+        if (port == VFU_VS1_RD && vlefw_read_i[VFU_VS1_RD]) begin
+          read_request[bank][port] = 1'b0;
+        end
+
+        if (port == VFU_VD_RD && vlefw_read_i[VFU_VD_RD]) begin
           read_request[bank][port] = 1'b0;
         end
       end
@@ -275,11 +289,19 @@ module spatz_vrf
     rvalid_o = '0;
     rdata_o  = 'x;
 
-    if (stream_active) begin
+    if (stream_active[0]) begin
       rdata_o[VFU_VS2_RD]  = stream_rdata[0];
       rvalid_o[VFU_VS2_RD] = stream_rvalid[0];
+    end
+
+    if (stream_active[1]) begin
       rdata_o[VFU_VS1_RD]  = stream_rdata[1];
       rvalid_o[VFU_VS1_RD] = stream_rvalid[1];
+    end
+
+    if (stream_active[2]) begin
+      rdata_o[VFU_VD_RD]  = stream_rdata[2];
+      rvalid_o[VFU_VD_RD] = stream_rvalid[2];
     end
 
     // For each port or each bank we have a priority based access scheme.
@@ -292,7 +314,7 @@ module spatz_vrf
       // Confirm read from which VLSU
 
         raddr[bank][0]       = f_vreg(raddr_i[VFU_VS2_RD]);
-        if (!stream_active) begin
+        if (!stream_active[0]) begin
           rdata_o[VFU_VS2_RD]  = rdata[bank][0]; 
           rvalid_o[VFU_VS2_RD] = 1'b1;          
         end
@@ -310,7 +332,7 @@ module spatz_vrf
       // Bank read port 1 - Priority: VFU (1) -> VSLDU
       if (read_request[bank][VFU_VS1_RD]) begin
         raddr[bank][1]       = f_vreg(raddr_i[VFU_VS1_RD]);
-        if (!stream_active) begin
+        if (!stream_active[1]) begin
           rdata_o[VFU_VS1_RD]  = rdata[bank][1]; 
           rvalid_o[VFU_VS1_RD] = 1'b1;          
         end          
@@ -324,8 +346,10 @@ module spatz_vrf
       // Bank read port 2 - Priority: VFU (D) -> VLSU
       if (read_request[bank][VFU_VD_RD]) begin
           raddr[bank][2]       = f_vreg(raddr_i[VFU_VD_RD]);
+        if (!stream_active[2]) begin
           rdata_o[VFU_VD_RD]  = rdata[bank][2]; 
-          rvalid_o[VFU_VD_RD] = 1'b1;       
+          rvalid_o[VFU_VD_RD] = 1'b1;          
+        end         
       end else if (read_request[bank][VLSU0_VD_RD]) begin
         raddr[bank][2]       = f_vreg(raddr_i[VLSU0_VD_RD]);
         rdata_o[VLSU0_VD_RD]  = rdata[bank][2];

@@ -11,9 +11,9 @@ module spatz_stream
     input  vrf_data_t [1:0]              wdata_i,
     output logic      [1:0]              wvalid_o,
 
-    input  vrf_addr_t [1:0]              raddr_i,
-    output vrf_data_t [1:0]              rdata_o,
-    output logic      [1:0]              rvalid_o,
+    input  vrf_addr_t [2:0]              raddr_i,
+    output vrf_data_t [2:0]              rdata_o,
+    output logic      [2:0]              rvalid_o,
 
     input  logic      [NrWritePorts-1:0] vlefw_write_i, 
     input  logic      [NrReadPorts-1:0]  vlefw_read_i 
@@ -33,15 +33,15 @@ module spatz_stream
     logic      [1:0]  buffer_drain;//Drain valid data from buffer
     logic      [1:0]  buffer_fill;//Fill valid data to buffer
 
-    //Idx 0 for VFU_VS2_RD, Idx1 for VFU_VS1_RD,  registered for sync purpose
-    vrf_data_t [1:0]  staged_rdata_d, staged_rdata_q;
-    logic      [1:0]  staged_rvalid_d, staged_rvalid_q;
+    //Idx 0 for VFU_VS2_RD, Idx1 for VFU_VS1_RD, Idx2 for VFU_VD_RD. registered for sync purpose
+    vrf_data_t [2:0]  staged_rdata_d, staged_rdata_q;
+    logic      [2:0]  staged_rvalid_d, staged_rvalid_q;
 
     logic      vlsu0_delivered, vlsu1_delivered, both_ready;
 
     //Hardwrite sync mode. Sync for fdotp, faxpy. No sync for gemv
     logic      stream_sync;
-    assign     stream_sync = 1'b1;
+    assign     stream_sync = 1'b0;
 
 
     // Stream Buffers Update
@@ -100,8 +100,8 @@ module spatz_stream
             
             //VLSU0 buffer
             if (buffer_valid_q[0]) begin //VLSU0 buffer has valid data
-                for (int port = 0; port < 2; port++) begin
-                    if (raddr_i[port] == buffer_addr_q[0]) begin
+                for (int port = 0; port < 3; port++) begin
+                    if (vlefw_read_i[port] && (raddr_i[port] == buffer_addr_q[0])) begin
                         staged_rdata_d[port]  = buffer_data_q[0];
                         staged_rvalid_d[port] = 1'b1;
                         vfu_buffer[0]       = 1'b1;
@@ -114,8 +114,8 @@ module spatz_stream
                 end
             end else begin // VLSU0 buffer empty, try to stream from VLSU0 directly if addr matched 
                 if (vlefw_write_i[VLSU0_VD_WD]) begin // Fall through only when VLSU0 has data to provide
-                    for (int i = 0; i < 2; i++) begin
-                        if (raddr_i[i] == waddr_i[0]) begin
+                    for (int i = 0; i < 3; i++) begin
+                        if (vlefw_read_i[i] && (raddr_i[i] == waddr_i[0])) begin
                            staged_rdata_d[i]    = wdata_i[0];
                            staged_rvalid_d[i]   = 1'b1;
                            vfu_fallthrough[0] = 1'b1; 
@@ -130,8 +130,8 @@ module spatz_stream
 
             //VLSU1 buffer
             if (buffer_valid_q[1]) begin //VLSU1 buffer has valid data
-                for (int port = 0; port < 2; port++) begin
-                    if (raddr_i[port] == buffer_addr_q[1]) begin
+                for (int port = 0; port < 3; port++) begin
+                    if (vlefw_read_i[port] && (raddr_i[port] == buffer_addr_q[1])) begin
                         staged_rdata_d[port]  = buffer_data_q[1];
                         staged_rvalid_d[port] = 1'b1;
                         vfu_buffer[1]       = 1'b1;
@@ -144,8 +144,8 @@ module spatz_stream
                 end
             end else begin // VLSU0 buffer empty, try to stream from VLSU0 directly if addr matched 
                 if (vlefw_write_i[VLSU1_VD_WD]) begin // Fall through only when VLSU0 has data to provide
-                    for (int i = 0; i < 2; i++) begin
-                        if (raddr_i[i] == waddr_i[1]) begin
+                    for (int i = 0; i < 3; i++) begin
+                        if (vlefw_read_i[i] && (raddr_i[i] == waddr_i[1])) begin
                            staged_rdata_d[i]    = wdata_i[1];
                            staged_rvalid_d[i]   = 1'b1;
                            vfu_fallthrough[1] = 1'b1; 
@@ -161,7 +161,7 @@ module spatz_stream
             // Synchronization and commit
             vlsu0_delivered = vfu_buffer[0] | vfu_fallthrough[0] | staged_rvalid_q[0];
             vlsu1_delivered = vfu_buffer[1] | vfu_fallthrough[1] | staged_rvalid_q[1];
-            both_ready      = vlsu0_delivered & vlsu1_delivered;//?use staged_rvalid_d since includes updates already?
+            both_ready      = (staged_rvalid_d[0] && staged_rvalid_d[1]) || (staged_rvalid_d[0] && staged_rvalid_d[2]) || (staged_rvalid_d[1] && staged_rvalid_d[2]); //vlsu0_delivered & vlsu1_delivered;//?use staged_rvalid_d since includes updates already?
 
             if (stream_sync) begin //No sync for gemv because each vlsu tracks different instructions due to loop unrolling
                 if (both_ready) begin
@@ -175,12 +175,17 @@ module spatz_stream
                         rvalid_o[1] = 1'b1;
                     end
 
+                    if (staged_rvalid_d[2]) begin
+                        rdata_o[2]  = staged_rdata_d[2];
+                        rvalid_o[2] = 1'b1;
+                    end
+
                     //clear the staged registers
                     staged_rvalid_d = '0;
                 end
             end else begin
                 if (vlsu0_delivered | vlsu1_delivered) begin
-                    if (staged_rvalid_d[0]) begin //?If both ready, must have valid data
+                    if (staged_rvalid_d[0]) begin 
                         rdata_o[0]  = staged_rdata_d[0];
                         rvalid_o[0] = 1'b1;
                         staged_rvalid_d[0] = 1'b0;
@@ -190,6 +195,12 @@ module spatz_stream
                         rdata_o[1]  = staged_rdata_d[1];
                         rvalid_o[1] = 1'b1;
                         staged_rvalid_d[1] = 1'b0;
+                    end
+
+                    if (staged_rvalid_d[2]) begin
+                        rdata_o[2]  = staged_rdata_d[2];
+                        rvalid_o[2] = 1'b1;
+                        staged_rvalid_d[2] = 1'b0;
                     end
                 end
             end
