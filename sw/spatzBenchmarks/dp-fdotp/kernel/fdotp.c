@@ -51,6 +51,9 @@ double fdotp_v64b(const double *a, const double *b, unsigned int avl) {
     avl -= vl;
   } while (avl > 0);
 
+  // Turn off streaming after finished
+  //asm volatile("csrrw x0, 0x7c2, %0" :: "r"(0x00000000));
+
   // Reduce and return
   asm volatile("vsetvli zero, %0, e64, m8, ta, ma" ::"r"(orig_avl));
   asm volatile("vfredusum.vs v0, v24, v0");

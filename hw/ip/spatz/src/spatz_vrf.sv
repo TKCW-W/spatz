@@ -253,12 +253,17 @@ module spatz_vrf
   // Read Mapping //
   //////////////////
 
+  // Streaming is only active for VFU when enabled and VFU requests stream reads
+  logic stream_active;
+  assign stream_active = vlefw_en_i && (|vlefw_read_i);
+
   logic [NrVRFBanks-1:0][NrReadPorts-1:0] read_request;
   always_comb begin: gen_read_request
     for (int bank = 0; bank < NrVRFBanks; bank++) begin
       for (int port = 0; port < NrReadPorts; port++) begin
         read_request[bank][port] = re_i[port] && f_bank(raddr_i[port]) == bank;
-        if ((port == VFU_VS2_RD || port == VFU_VS1_RD) && vlefw_en_i) begin
+        // Block VFU VS2 and VS1 read requests when VFU actively requests stream reads
+        if ((port == VFU_VS2_RD || port == VFU_VS1_RD) && stream_active) begin
           read_request[bank][port] = 1'b0;
         end
       end
@@ -270,7 +275,7 @@ module spatz_vrf
     rvalid_o = '0;
     rdata_o  = 'x;
 
-    if (vlefw_en_i) begin
+    if (stream_active) begin
       rdata_o[VFU_VS2_RD]  = stream_rdata[0];
       rvalid_o[VFU_VS2_RD] = stream_rvalid[0];
       rdata_o[VFU_VS1_RD]  = stream_rdata[1];
@@ -287,7 +292,7 @@ module spatz_vrf
       // Confirm read from which VLSU
 
         raddr[bank][0]       = f_vreg(raddr_i[VFU_VS2_RD]);
-        if (!vlefw_en_i) begin
+        if (!stream_active) begin
           rdata_o[VFU_VS2_RD]  = rdata[bank][0]; 
           rvalid_o[VFU_VS2_RD] = 1'b1;          
         end
@@ -305,7 +310,7 @@ module spatz_vrf
       // Bank read port 1 - Priority: VFU (1) -> VSLDU
       if (read_request[bank][VFU_VS1_RD]) begin
         raddr[bank][1]       = f_vreg(raddr_i[VFU_VS1_RD]);
-        if (!vlefw_en_i) begin
+        if (!stream_active) begin
           rdata_o[VFU_VS1_RD]  = rdata[bank][1]; 
           rvalid_o[VFU_VS1_RD] = 1'b1;          
         end          
