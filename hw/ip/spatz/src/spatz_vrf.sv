@@ -128,8 +128,8 @@ module spatz_vrf
     .rdata_o  (stream_rdata),
     .rvalid_o (stream_rvalid),
     
-    .vlefw_write_i (vlefw_write_i),
-    .vlefw_read_i  (vlefw_read_i)
+    .vlefw_write_i (we_i),//(vlefw_write_i),
+    .vlefw_read_i  (re_i)//(vlefw_read_i)
   );
 
 

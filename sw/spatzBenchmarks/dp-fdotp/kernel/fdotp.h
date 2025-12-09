@@ -18,6 +18,7 @@
 
 #ifndef _FDOTPROD_H_
 #define _FDOTPROD_H_
+#define VTYPE_E64_M8_STREAM (0x18 | 0x03 | 0x40 | 0x80 | 0x400) // = 0x4DB, stream if bit[10] is high
 
 inline double fdotp_v64b(const double *a, const double *b, unsigned int avl)
     __attribute__((always_inline));

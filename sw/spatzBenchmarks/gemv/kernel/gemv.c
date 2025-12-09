@@ -151,40 +151,15 @@ void gemv_v16b_m4(__fp16 *a, __fp16* b, __fp16* c, int M, int M_core, int N) {
   do {
     asm volatile("vsetvli %0, %1, e16, m4, ta, ma" : "=r"(vl) : "r"(avl));
     for (int col=0; col < N; col+=2) {
-      // Load chunk a
-      asm volatile("vle16.v v0, (%0)" ::"r"(a_));
-      a_ += M;
-
-      // Load chunk a
-      asm volatile("vle16.v v8, (%0)" ::"r"(a_));
-      a_ += M;
-
-      // Multiply and accumulate
-      float t0;
-      asm volatile("flh %[t], 0(%[b])" : [t] "=f"(t0) : [b] "r"(b_));
-      if (col == 0) {
-        asm volatile("vfmul.vf v4, v0, %0" ::"f"(t0));
-      } else {
-        asm volatile("vfmacc.vf v4, %0, v0" ::"f"(t0));
-      }
-      b_++;
-
-      // Multiply and accumulate
-      float t1;
-      asm volatile("flh %[t], 0(%[b])" : [t] "=f"(t1) : [b] "r"(b_));
-      if (col == 0) {
-        asm volatile("vfmul.vf v12, v8, %0" ::"f"(t1));
-      } else {
-        asm volatile("vfmacc.vf v12, %0, v8" ::"f"(t1));
-      }
-      b_++;
-      
-
+      // // Load chunk a
       // asm volatile("vle16.v v0, (%0)" ::"r"(a_));
       // a_ += M;
+
+      // // Load chunk a
       // asm volatile("vle16.v v8, (%0)" ::"r"(a_));
       // a_ += M;
 
+      // // Multiply and accumulate
       // float t0;
       // asm volatile("flh %[t], 0(%[b])" : [t] "=f"(t0) : [b] "r"(b_));
       // if (col == 0) {
@@ -194,6 +169,7 @@ void gemv_v16b_m4(__fp16 *a, __fp16* b, __fp16* c, int M, int M_core, int N) {
       // }
       // b_++;
 
+      // // Multiply and accumulate
       // float t1;
       // asm volatile("flh %[t], 0(%[b])" : [t] "=f"(t1) : [b] "r"(b_));
       // if (col == 0) {
@@ -202,6 +178,30 @@ void gemv_v16b_m4(__fp16 *a, __fp16* b, __fp16* c, int M, int M_core, int N) {
       //   asm volatile("vfmacc.vf v12, %0, v8" ::"f"(t1));
       // }
       // b_++;
+      
+
+      asm volatile("vle16.v v0, (%0)" ::"r"(a_));
+      a_ += M;
+      asm volatile("vle16.v v8, (%0)" ::"r"(a_));
+      a_ += M;
+
+      float t0;
+      asm volatile("flh %[t], 0(%[b])" : [t] "=f"(t0) : [b] "r"(b_));
+      if (col == 0) {
+        asm volatile("vfmul.vf v4, v0, %0" ::"f"(t0));
+      } else {
+        asm volatile("vfmacc.vf v4, %0, v0" ::"f"(t0));
+      }
+      b_++;
+
+      float t1;
+      asm volatile("flh %[t], 0(%[b])" : [t] "=f"(t1) : [b] "r"(b_));
+      if (col == 0) {
+        asm volatile("vfmul.vf v12, v8, %0" ::"f"(t1));
+      } else {
+        asm volatile("vfmacc.vf v12, %0, v8" ::"f"(t1));
+      }
+      b_++;
 
     }
     asm volatile("vfadd.vv v12, v12, v4");
