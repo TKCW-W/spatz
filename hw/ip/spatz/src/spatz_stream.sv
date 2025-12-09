@@ -41,7 +41,7 @@ module spatz_stream
 
     //Hardwrite sync mode. Sync for fdotp, faxpy. No sync for gemv
     logic      stream_sync;
-    assign     stream_sync = 1'b0;
+    assign     stream_sync = 1'b1;
 
 
     // Stream Buffers Update

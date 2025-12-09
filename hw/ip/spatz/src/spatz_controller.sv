@@ -346,9 +346,9 @@ module spatz_controller
     for (int unsigned port = 0; port < NrVregfilePorts; port++) begin
       // Enable the VRF port if the dependant instructions wrote in the previous cycle
       // QW: assign vfu grant decision later after counter logic 
-      if (port != SB_VFU_VD_WD) begin//&& port != SB_VFU_VS1_RD && port != SB_VFU_VS2_RD) begin // && port != SB_VFU_VD_RD) begin
+      //if (port != SB_VFU_VD_WD) begin//&& port != SB_VFU_VS1_RD && port != SB_VFU_VS2_RD) begin // && port != SB_VFU_VD_RD) begin
         sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
-      end 
+      //end 
     end 
 
 
@@ -370,19 +370,28 @@ module spatz_controller
       end      
     end  
 
+    if (sb_enable_o[SB_VFU_VD_WD]) begin
+      wrote_result_d[sb_id_i[SB_VFU_VD_WD]]           = sb_wrote_result_i[SB_VFU_VD_WD - SB_VFU_VD_WD] && (!narrow_wide_q[sb_id_i[SB_VFU_VD_WD]] || wrote_result_narrowing_q[sb_id_i[SB_VFU_VD_WD]]);
+      // Once the data from VLSU is successfully written to VRF, the flag will raise to indicate readiness of chaining (yx)
+      if (wrote_result_d[sb_id_i[SB_VFU_VD_WD]]) begin
+          wrote_result_trigger_d[sb_id_i[SB_VFU_VD_WD]] = 1'b1; 
+      end      
+    end  
+
     // Grant access to VRF read ports for VFU when there is at least one valid data from VLSU (yx)
     if (vlefw_en_q) begin
       for (int unsigned port = 0; port < 3; port++) begin 
         sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_trigger_d) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
       end   
+      sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps | wrote_result_trigger_d) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining);
     end
 
     // QW: Initialise or update vlsu0 counter
     if (sb_enable_o[SB_VLSU0_VD_WD]) begin
 
       // New instruction?
-      if (vlsu0_count_q.id != current_id_vlsu0 || !counter_en_q[0]) begin
-        vlsu0_count_d.id          = current_id_vlsu0;
+      if (vlsu0_count_q.id != sb_id_i[SB_VLSU0_VD_WD] || !counter_en_q[0]) begin
+        vlsu0_count_d.id          = sb_id_i[SB_VLSU0_VD_WD];
         vlsu0_count_d.num_written = '0;
         counter_en_d[0] = 1'b1;
       end
@@ -397,8 +406,8 @@ module spatz_controller
     if (sb_enable_o[SB_VLSU1_VD_WD]) begin
 
       // New instruction?
-      if (vlsu1_count_q.id != current_id_vlsu1 || !counter_en_q[1]) begin
-        vlsu1_count_d.id          = current_id_vlsu1;
+      if (vlsu1_count_q.id != sb_id_i[SB_VLSU1_VD_WD] || !counter_en_q[1]) begin
+        vlsu1_count_d.id          = sb_id_i[SB_VLSU1_VD_WD];
         vlsu1_count_d.num_written = '0;
         counter_en_d[1] = 1'b1;
       end
@@ -409,28 +418,28 @@ module spatz_controller
       end
     end
 
-    // QW: VFU write enable logic
-    if (|scoreboard_q[current_id_vfu].deps) begin
-      // Ensure VFU and VLSUs are aligned
-      if (scoreboard_q[current_id_vfu].deps[vlsu0_count_q.id] && scoreboard_q[current_id_vfu].deps[vlsu1_count_q.id] && counter_en_d[0] && counter_en_d[1]) begin
-        if(vlsu0_count_q.num_written > vfu_count_q.num_written && vlsu1_count_q.num_written > vfu_count_q.num_written) begin
-          sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && !scoreboard_q[current_id_vfu].prevent_chaining;
-        end
-      end else if (scoreboard_q[current_id_vfu].deps[vlsu0_count_q.id] && !scoreboard_q[current_id_vfu].deps[vlsu1_count_q.id] && counter_en_d[0]) begin //vlsu1 completes
-        if(vlsu0_count_q.num_written > vfu_count_q.num_written) begin
-          sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && !scoreboard_q[current_id_vfu].prevent_chaining;     
-        end
-      end else if (!scoreboard_q[current_id_vfu].deps[vlsu0_count_q.id] && scoreboard_q[current_id_vfu].deps[vlsu1_count_q.id] && counter_en_d[1]) begin //vlsu0 completes
-        if(vlsu1_count_q.num_written > vfu_count_q.num_written) begin
-          sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && !scoreboard_q[current_id_vfu].prevent_chaining;      
-        end
-      end else begin // VFU depends on other instructions, use original grant
-        sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining);
-      end
+    // // QW: VFU write enable logic
+    // if (|scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps) begin
+    //   // Ensure VFU and VLSUs are aligned
+    //   if (scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps[vlsu0_count_q.id] && scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps[vlsu1_count_q.id] && counter_en_d[0] && counter_en_d[1]) begin
+    //     if(vlsu0_count_q.num_written > vfu_count_q.num_written && vlsu1_count_q.num_written > vfu_count_q.num_written) begin
+    //       sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining;
+    //     end
+    //   end else if (scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps[vlsu0_count_q.id] && !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps[vlsu1_count_q.id] && counter_en_d[0]) begin //vlsu1 completes
+    //     if(vlsu0_count_q.num_written > vfu_count_q.num_written) begin
+    //       sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining;     
+    //     end
+    //   end else if (!scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps[vlsu0_count_q.id] && scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps[vlsu1_count_q.id] && counter_en_d[1]) begin //vlsu0 completes
+    //     if(vlsu1_count_q.num_written > vfu_count_q.num_written) begin
+    //       sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining;      
+    //     end
+    //   end else begin // VFU depends on other instructions, use original grant
+    //     sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining);
+    //   end
 
-    end else begin // VFU has no dependencies
-      sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining);  
-    end
+    // end else begin // VFU has no dependencies
+    //   sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining);  
+    // end
 
     // QW: Initialise or update vfu counter
     // Initialise when the Read Ports track new ID, update only when Write Port track the same ID (new instruction)
