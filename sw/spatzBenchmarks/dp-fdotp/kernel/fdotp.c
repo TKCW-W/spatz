@@ -27,8 +27,8 @@ double fdotp_v64b(const double *a, const double *b, unsigned int avl) {
   double red;
 
   // Clean the accumulator
-  //asm volatile("vsetvli %0, %1, e64, m8, ta, ma" : "=r"(vl) : "r"(avl));
-  asm volatile("vsetvli %0, %1, %2" : "=r"(vl) : "r"(avl) , "i"(VTYPE_E64_M8_STREAM));
+  asm volatile("vsetvli %0, %1, e64, m8, ta, ma" : "=r"(vl) : "r"(avl));
+  //asm volatile("vsetvli %0, %1, %2" : "=r"(vl) : "r"(avl) , "i"(VTYPE_E64_M8_STREAM));
   asm volatile("vmv.s.x v0, zero");
 
   // Stripmine and accumulate a partial reduced vector
