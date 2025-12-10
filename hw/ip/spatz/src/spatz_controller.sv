@@ -62,7 +62,8 @@ module spatz_controller
     input  vlsu_assignment_t                       vlsu_assignment_i,
 
     // VRF Streaming enabling forward (QW)
-    output logic                                   vlefw_en_o
+    output logic                                   vlefw_en_o,
+    output logic                                   stream_sync_o
   );
 
 // Include FF
@@ -98,14 +99,19 @@ module spatz_controller
   // QW: forward enabling streaming information to VRF
   assign vlefw_en_o = vlefw_en_q;
 
+  logic stream_sync_d, stream_sync_q;
+  `FF(stream_sync_q, stream_sync_d, '1) 
+  assign stream_sync_o = stream_sync_q;
+
   always_comb begin : proc_vcsr
     automatic logic [$clog2(MAXVL):0] vlmax = 0;
 
-    vstart_d = vstart_q;
-    vl_d     = vl_q;
-    vtype_d  = vtype_q;
-    vlefw_en_d = vlefw_en_q;
-    FWVreg_d = FWVreg_q;
+    vstart_d    = vstart_q;
+    vl_d        = vl_q;
+    vtype_d     = vtype_q;
+    vlefw_en_d  = vlefw_en_q;
+    FWVreg_d    = FWVreg_q;
+    stream_sync_d = stream_sync_q;
 
     if (spatz_req_valid) begin
       // Reset vstart to zero if we have a new non CSR operation
@@ -131,7 +137,10 @@ module spatz_controller
             vlefw_en_d = '0;
           end else begin
             vlefw_en_d = '1;
-            FWVreg_d = spatz_req.rs1; 
+            FWVreg_d = spatz_req.rs1 | FWVreg_q; 
+            if ((spatz_req.rs1 & (spatz_req.rs1 -1)) != '0) begin // Check how many bits are one, if more than one, turn on stream_sync
+              stream_sync_d = 1'b0;
+            end
           end
         end else begin
           vlefw_en_d = '0;
@@ -250,20 +259,6 @@ module spatz_controller
   // Scoreboard //
   ////////////////
 
-  // QW: Add counter to track with VRF Word Granuality the writing progress of VLSU for granting the VFU
-  typedef struct packed {
-    logic [4:0] num_written; //how many words written to VRF, curretly max LMUL is 8, allowing 16 VRFWords
-    logic [1:0] id;          //tracks which instruction we are counting for
-  } counter_t;
-  counter_t vlsu0_count_d, vlsu0_count_q, vlsu1_count_d, vlsu1_count_q, vfu_count_d, vfu_count_q;
-
-  `FF(vlsu0_count_q, vlsu0_count_d, '{default: '0})
-  `FF(vlsu1_count_q, vlsu1_count_d, '{default: '0})
-  `FF(vfu_count_q, vfu_count_d, '{default: '0})
-
-  logic [1:0] current_id_vlsu0, current_id_vlsu1, current_id_vfu;
-  logic [2:0] counter_en_d, counter_en_q; 
-
   // Which instruction is reading and writing to each vector register?
   typedef struct packed {
     spatz_id_t id;
@@ -273,7 +268,7 @@ module spatz_controller
 
   `FF(read_table_q, read_table_d, '{default: '0})
   `FF(write_table_q, write_table_d, '{default: '0})
-  `FF(counter_en_q, counter_en_d, '{default: '0})
+  // `FF(counter_en_q, counter_en_d, '{default: '0})
 
   // Port scoreboard. Keeps track of the dependencies of this instruction with other instructions
   typedef struct packed {
@@ -322,16 +317,6 @@ module spatz_controller
     scoreboard_d             = scoreboard_q;
     narrow_wide_d            = narrow_wide_q;
     wrote_result_narrowing_d = wrote_result_narrowing_q;
-    counter_en_d             = counter_en_q;
-
-    // QW
-    vlsu0_count_d            = vlsu0_count_q;
-    vlsu1_count_d            = vlsu1_count_q;
-    vfu_count_d              = vfu_count_q;
-
-    current_id_vlsu0 = sb_id_i[SB_VLSU0_VD_WD];
-    current_id_vlsu1 = sb_id_i[SB_VLSU1_VD_WD];
-    current_id_vfu   = sb_id_i[SB_VFU_VD_WD];
 
     // YX
     vlefw_table_d            = vlefw_table_q; //(yx)
@@ -345,10 +330,7 @@ module spatz_controller
 
     for (int unsigned port = 0; port < NrVregfilePorts; port++) begin
       // Enable the VRF port if the dependant instructions wrote in the previous cycle
-      // QW: assign vfu grant decision later after counter logic 
-      //if (port != SB_VFU_VD_WD) begin//&& port != SB_VFU_VS1_RD && port != SB_VFU_VS2_RD) begin // && port != SB_VFU_VD_RD) begin
-        sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
-      //end 
+      sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
     end 
 
 
@@ -384,78 +366,6 @@ module spatz_controller
         sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_trigger_d) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
       end   
       sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps | wrote_result_trigger_d) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining);
-    end
-
-    // QW: Initialise or update vlsu0 counter
-    if (sb_enable_o[SB_VLSU0_VD_WD]) begin
-
-      // New instruction?
-      if (vlsu0_count_q.id != sb_id_i[SB_VLSU0_VD_WD] || !counter_en_q[0]) begin
-        vlsu0_count_d.id          = sb_id_i[SB_VLSU0_VD_WD];
-        vlsu0_count_d.num_written = '0;
-        counter_en_d[0] = 1'b1;
-      end
-
-      // Increment when VLSU0 writes to VRF
-      if (sb_wrote_result_i[SB_VLSU0_VD_WD - SB_VFU_VD_WD]) begin
-        vlsu0_count_d.num_written = vlsu0_count_q.num_written + 1'b1;
-      end
-    end
-
-    // QW: Initialise or update vlsu1 counter
-    if (sb_enable_o[SB_VLSU1_VD_WD]) begin
-
-      // New instruction?
-      if (vlsu1_count_q.id != sb_id_i[SB_VLSU1_VD_WD] || !counter_en_q[1]) begin
-        vlsu1_count_d.id          = sb_id_i[SB_VLSU1_VD_WD];
-        vlsu1_count_d.num_written = '0;
-        counter_en_d[1] = 1'b1;
-      end
-
-      // Increment when VLSU0 writes to VRF
-      if (sb_wrote_result_i[SB_VLSU1_VD_WD - SB_VFU_VD_WD]) begin
-        vlsu1_count_d.num_written = vlsu1_count_q.num_written + 1'b1;
-      end
-    end
-
-    // // QW: VFU write enable logic
-    // if (|scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps) begin
-    //   // Ensure VFU and VLSUs are aligned
-    //   if (scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps[vlsu0_count_q.id] && scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps[vlsu1_count_q.id] && counter_en_d[0] && counter_en_d[1]) begin
-    //     if(vlsu0_count_q.num_written > vfu_count_q.num_written && vlsu1_count_q.num_written > vfu_count_q.num_written) begin
-    //       sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining;
-    //     end
-    //   end else if (scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps[vlsu0_count_q.id] && !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps[vlsu1_count_q.id] && counter_en_d[0]) begin //vlsu1 completes
-    //     if(vlsu0_count_q.num_written > vfu_count_q.num_written) begin
-    //       sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining;     
-    //     end
-    //   end else if (!scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps[vlsu0_count_q.id] && scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps[vlsu1_count_q.id] && counter_en_d[1]) begin //vlsu0 completes
-    //     if(vlsu1_count_q.num_written > vfu_count_q.num_written) begin
-    //       sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining;      
-    //     end
-    //   end else begin // VFU depends on other instructions, use original grant
-    //     sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining);
-    //   end
-
-    // end else begin // VFU has no dependencies
-    //   sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining);  
-    // end
-
-    // QW: Initialise or update vfu counter
-    // Initialise when the Read Ports track new ID, update only when Write Port track the same ID (new instruction)
-    if (sb_enable_o[SB_VFU_VD_WD]) begin
-
-      // New instruction?
-      if (vfu_count_q.id != sb_id_i[SB_VFU_VS1_RD] || !counter_en_q[2]) begin
-        vfu_count_d.id          = sb_id_i[SB_VFU_VS1_RD];
-        vfu_count_d.num_written = '0;
-        counter_en_d[2]           = 1'b1;
-      end
-
-      // Increment when VFU writes to VRF, only when VFU write port catches up with read port 
-      if (sb_wrote_result_i[SB_VFU_VD_WD - SB_VFU_VD_WD] && sb_id_i[SB_VFU_VS1_RD] == sb_id_i[SB_VFU_VD_WD]) begin
-        vfu_count_d.num_written = vfu_count_q.num_written + 1'b1;
-      end
     end
 
     // enable the streaming ports depending on the scoreboard decisions (yx) 
@@ -522,12 +432,6 @@ module spatz_controller
       vlefw_table_d[vfu_rsp_i.id]            = '0; // clear the forward tracking with scoreboard (yx)
       for (int unsigned insn = 0; insn < NrParallelInstructions; insn++)
         scoreboard_d[insn].deps[vfu_rsp_i.id] = 1'b0;
-
-      // QW: Reset counter
-      if (vfu_rsp_i.id == vfu_count_q.id) begin
-        vfu_count_d = '{default: '0};
-        counter_en_d[2] = 1'b0;
-      end
     end
 
     if (vlsu_rsp_valid_i[0]) begin
@@ -545,11 +449,6 @@ module spatz_controller
       wrote_result_trigger_d[sb_id_i[SB_VLSU0_VD_WD]]       = 1'b0; // Clear the chaining ready trigger with the scoreboard (yx)
       for (int unsigned insn = 0; insn < NrParallelInstructions; insn++)
         scoreboard_d[insn].deps[vlsu_rsp_i[0].id] = 1'b0;
-
-      if (vlsu_rsp_i[0].id == vlsu0_count_q.id) begin
-        vlsu0_count_d = '{default: '0};
-        counter_en_d[0] = 1'b0;
-      end
     end
 
     if (vlsu_rsp_valid_i[1]) begin
@@ -567,11 +466,6 @@ module spatz_controller
       wrote_result_trigger_d[sb_id_i[SB_VLSU1_VD_WD]]       = 1'b0; // Clear the chaining ready trigger with the scoreboard (yx)
       for (int unsigned insn = 0; insn < NrParallelInstructions; insn++)
         scoreboard_d[insn].deps[vlsu_rsp_i[1].id] = 1'b0;
-
-      if (vlsu_rsp_i[1].id == vlsu1_count_q.id) begin
-        vlsu1_count_d = '{default: '0};
-        counter_en_d[1] = 1'b0;
-      end
     end
 
     if (vsldu_rsp_valid_i) begin
@@ -604,25 +498,7 @@ module spatz_controller
             vlefw_table_d[spatz_req.id].read[SB_VFU_VS2_RD] = 1'b1;
           if (spatz_req.vd_is_src && FWVreg_q[vreg_t'(spatz_req.vd)]) 
             vlefw_table_d[spatz_req.id].read[SB_VFU_VD_RD] = 1'b1;
-        end 
-        // case (spatz_req.ex_unit)
-        //   VFU: begin
-        //     if ((spatz_req.use_vs1 && FWVreg_q[vreg_t'(spatz_req.vs1)]))
-        //       vlefw_table_d[spatz_req.id].read[SB_VFU_VS1_RD] = 1'b1;
-        //     if (spatz_req.use_vs2 && FWVreg_q[vreg_t'(spatz_req.vs2)]) 
-        //       vlefw_table_d[spatz_req.id].read[SB_VFU_VS2_RD] = 1'b1;
-        //     if (spatz_req.vd_is_src && FWVreg_q[vreg_t'(spatz_req.vd)]) 
-        //       vlefw_table_d[spatz_req.id].read[SB_VFU_VD_RD] = 1'b1;
-        //   end
-        //   // LSU: begin
-        //   //   if (spatz_req.use_vd && FWVreg_q[vreg_t'(spatz_req.vd)]) 
-        //   //     vlefw_table_d[spatz_req.id].write[SB_VLSU_VD_WD-(NrVregfilePorts-NrWritePorts)] = 1'b1;
-        //   // end
-        //   default: begin 
-        //     vlefw_table_d[spatz_req.id] = '{id: spatz_req.id, write: '0, read: '0};
-        //   end
-        // endcase
-          
+        end
       end 
 
       // RAW hazard

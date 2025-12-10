@@ -186,9 +186,12 @@ int main() {
   // Wait for all cores to finish
   snrt_cluster_hw_barrier();
 
-  uint32_t vle_vreg = 0x00010100; //stream v8 and v16
+  uint32_t vle_vreg0 = 0x00000100; //stream v8 and v16
   //uint32_t vle_vreg = 0x00000000;
-  asm volatile("csrrw x0, 0x7c2, %0" :: "r"(vle_vreg));
+  asm volatile("csrrw x0, 0x7c2, %0" :: "r"(vle_vreg0));
+  uint32_t vle_vreg1 = 0x00010000; //stream v8 and v16
+  //uint32_t vle_vreg = 0x00000000;
+  asm volatile("csrrw x0, 0x7c2, %0" :: "r"(vle_vreg1));
 
   // Start dump
   if (cid == 0)

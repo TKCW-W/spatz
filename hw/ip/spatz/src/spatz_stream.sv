@@ -16,7 +16,8 @@ module spatz_stream
     output logic      [2:0]              rvalid_o,
 
     input  logic      [NrWritePorts-1:0] vlefw_write_i, 
-    input  logic      [NrReadPorts-1:0]  vlefw_read_i 
+    input  logic      [NrReadPorts-1:0]  vlefw_read_i,
+    input  logic                         stream_sync_i
   );
 
 // Include FF
@@ -40,8 +41,8 @@ module spatz_stream
     logic      vlsu0_delivered, vlsu1_delivered, both_ready;
 
     //Hardwrite sync mode. Sync for fdotp, faxpy. No sync for gemv
-    logic      stream_sync;
-    assign     stream_sync = 1'b1;
+    //logic      stream_sync;
+    //assign     stream_sync = 1'b1;
 
 
     // Stream Buffers Update
@@ -92,7 +93,6 @@ module spatz_stream
 
         staged_rdata_d  = staged_rdata_q;
         staged_rvalid_d = staged_rvalid_q;
-
 
         //VFU is enabled for stream reading
         //Stream from buffer if not empty, otherwise from VLSU with matched address
@@ -163,7 +163,7 @@ module spatz_stream
             vlsu1_delivered = vfu_buffer[1] | vfu_fallthrough[1] | staged_rvalid_q[1];
             both_ready      = (staged_rvalid_d[0] && staged_rvalid_d[1]) || (staged_rvalid_d[0] && staged_rvalid_d[2]) || (staged_rvalid_d[1] && staged_rvalid_d[2]); //vlsu0_delivered & vlsu1_delivered;//?use staged_rvalid_d since includes updates already?
 
-            if (stream_sync) begin //No sync for gemv because each vlsu tracks different instructions due to loop unrolling
+            if (stream_sync_i) begin //No sync for gemv because each vlsu tracks different instructions due to loop unrolling
                 if (both_ready) begin
                     if (staged_rvalid_d[0]) begin //?If both ready, must have valid data
                         rdata_o[0]  = staged_rdata_d[0];

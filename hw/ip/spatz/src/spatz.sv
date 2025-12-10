@@ -212,6 +212,8 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
   /////////
   // QW: Forward stream enable to VRF from SB
   logic vlefw_en;
+  // Enabled for gemv with where VFU dependent only on one VLSU 
+  logic             stream_sync;
 
   // Write ports
   vrf_addr_t [NrWritePorts-1:0] vrf_waddr, vrf_waddr_buf;
@@ -251,7 +253,8 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     // Streaming
     .vlefw_en_i      (vlefw_en), //QW
     .vlefw_write_i   (vrf_vlefw_write), // VLE Forward write signal (yx)
-    .vlefw_read_i    (vrf_vlefw_read) // VLE Forward read signal (yx)
+    .vlefw_read_i    (vrf_vlefw_read), // VLE Forward read signal (yx)
+    .stream_sync_i   (stream_sync)
   );
 
   ////////////////
@@ -329,7 +332,8 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     // VLSU assignment signal input from the vlsu wrapper 
     .vlsu_assignment_i(vlsu_assignment   ),
     .sb_vlefw_read_o  (vrf_vlefw_read  ),
-    .sb_vlefw_write_o (vrf_vlefw_write )
+    .sb_vlefw_write_o (vrf_vlefw_write ),
+    .stream_sync_o    (stream_sync)
 
   );
 

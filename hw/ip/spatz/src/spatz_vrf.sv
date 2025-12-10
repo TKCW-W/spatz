@@ -34,7 +34,8 @@ module spatz_vrf
     // Streaming
     input  logic                         vlefw_en_i, //QW
     input  logic      [NrWritePorts-1:0] vlefw_write_i, //(yx) 
-    input  logic      [NrReadPorts-1:0]  vlefw_read_i //(yx)
+    input  logic      [NrReadPorts-1:0]  vlefw_read_i, //(yx)
+    input  logic                         stream_sync_i
   );
 
 `include "common_cells/registers.svh"
@@ -129,7 +130,8 @@ module spatz_vrf
     .rvalid_o (stream_rvalid),
     
     .vlefw_write_i (we_i),//(vlefw_write_i),
-    .vlefw_read_i  (re_i)//(vlefw_read_i)
+    .vlefw_read_i  (re_i),//(vlefw_read_i),
+    .stream_sync_i (stream_sync_i)
   );
 
 
