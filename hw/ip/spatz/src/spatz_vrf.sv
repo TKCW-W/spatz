@@ -129,8 +129,8 @@ module spatz_vrf
     .rdata_o  (stream_rdata),
     .rvalid_o (stream_rvalid),
     
-    .vlefw_write_i (we_i),//(vlefw_write_i),
-    .vlefw_read_i  (re_i),//(vlefw_read_i),
+    .vlefw_write_i (vlefw_write_i),
+    .vlefw_read_i  (vlefw_read_i),
     .stream_sync_i (stream_sync_i)
   );
 
@@ -268,9 +268,6 @@ module spatz_vrf
       for (int port = 0; port < NrReadPorts; port++) begin
         read_request[bank][port] = re_i[port] && f_bank(raddr_i[port]) == bank;
         // Block VFU VS2 and VS1 read requests when VFU actively requests stream reads
-        // if ((port == VFU_VS2_RD || port == VFU_VS1_RD) && stream_active) begin
-        //   read_request[bank][port] = 1'b0;
-        // end
         if (port == VFU_VS2_RD && vlefw_read_i[VFU_VS2_RD]) begin
           read_request[bank][port] = 1'b0;
         end
@@ -313,7 +310,6 @@ module spatz_vrf
     for (int unsigned bank = 0; bank < NrVRFBanks; bank++) begin
       // Bank read port 0 - Priority: VFU (2) -> VLSU
       if (read_request[bank][VFU_VS2_RD]) begin
-      // Confirm read from which VLSU
 
         raddr[bank][0]       = f_vreg(raddr_i[VFU_VS2_RD]);
         if (!stream_active[0]) begin

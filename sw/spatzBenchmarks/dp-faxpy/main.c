@@ -83,6 +83,10 @@ int main() {
   asm volatile("csrrw x0, 0x7c2, %0" :: "r"(vle_vreg0));
   uint32_t vle_vreg1 = 0x00000100;
   asm volatile("csrrw x0, 0x7c2, %0" :: "r"(vle_vreg1));
+  uint32_t vle_vreg2 = 0x00010000;
+  asm volatile("csrrw x0, 0x7c2, %0" :: "r"(vle_vreg2));
+  uint32_t vle_vreg3 = 0x01000000;
+  asm volatile("csrrw x0, 0x7c2, %0" :: "r"(vle_vreg3));
 
   // Start dump
   if (cid == 0)
@@ -93,7 +97,7 @@ int main() {
     timer = benchmark_get_cycle();
 
   // Call AXPY
-  faxpy_v64b(*a, x_int, y_int, dim_core);
+  faxpy_v64b_unrl(*a, x_int, y_int, dim_core);
 
   // Wait for all cores to finish
   snrt_cluster_hw_barrier();

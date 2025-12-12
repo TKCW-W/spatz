@@ -27,23 +27,18 @@ module spatz_stream
     //Idx 0 for VLSU0, Idx 1 for VLSU1
     vrf_data_t [1:0]  buffer_data_q;
     vrf_addr_t [1:0]  buffer_addr_q;
-    logic      [1:0]  buffer_valid_q;//High when buffer holds data, low if buffer empty
+    logic      [1:0]  buffer_valid_q; //High when buffer holds data, low if buffer empty
 
-    logic      [1:0]  vfu_buffer;//High when data streamed to vfu from buffer
+    logic      [1:0]  vfu_buffer;     //High when data streamed to vfu from buffer
     logic      [1:0]  vfu_fallthrough;//High when data streamed to vfu from vlsu directly
-    logic      [1:0]  buffer_drain;//Drain valid data from buffer
-    logic      [1:0]  buffer_fill;//Fill valid data to buffer
+    logic      [1:0]  buffer_drain;   //Drain valid data from buffer
+    logic      [1:0]  buffer_fill;    //Fill valid data to buffer
 
     //Idx 0 for VFU_VS2_RD, Idx1 for VFU_VS1_RD, Idx2 for VFU_VD_RD. registered for sync purpose
     vrf_data_t [2:0]  staged_rdata_d, staged_rdata_q;
     logic      [2:0]  staged_rvalid_d, staged_rvalid_q;
 
-    logic      vlsu0_delivered, vlsu1_delivered, both_ready;
-
-    //Hardwrite sync mode. Sync for fdotp, faxpy. No sync for gemv
-    //logic      stream_sync;
-    //assign     stream_sync = 1'b1;
-
+     logic      vlsu0_delivered, vlsu1_delivered, both_ready;
 
     // Stream Buffers Update
     always_ff @(posedge clk_i or negedge rst_ni) begin
@@ -158,6 +153,10 @@ module spatz_stream
                 end
             end
 
+            // Acknowledging valid vlsu data consumption and ready for next data
+            if (vfu_fallthrough[0] || buffer_fill[0]) wvalid_o[0] = 1'b1; 
+            if (vfu_fallthrough[1] || buffer_fill[1]) wvalid_o[1] = 1'b1;  
+
             // Synchronization and commit
             vlsu0_delivered = vfu_buffer[0] | vfu_fallthrough[0] | staged_rvalid_q[0];
             vlsu1_delivered = vfu_buffer[1] | vfu_fallthrough[1] | staged_rvalid_q[1];
@@ -165,7 +164,7 @@ module spatz_stream
 
             if (stream_sync_i) begin //No sync for gemv because each vlsu tracks different instructions due to loop unrolling
                 if (both_ready) begin
-                    if (staged_rvalid_d[0]) begin //?If both ready, must have valid data
+                    if (staged_rvalid_d[0]) begin 
                         rdata_o[0]  = staged_rdata_d[0];
                         rvalid_o[0] = 1'b1;
                     end
@@ -203,10 +202,7 @@ module spatz_stream
                         staged_rvalid_d[2] = 1'b0;
                     end
                 end
-            end
-
-            if (vfu_fallthrough[0] || buffer_fill[0]) wvalid_o[0] = 1'b1; 
-            if (vfu_fallthrough[1] || buffer_fill[1]) wvalid_o[1] = 1'b1;             
+            end           
 
         end
 
