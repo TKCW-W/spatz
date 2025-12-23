@@ -79,8 +79,10 @@ int main() {
   // Configure the VLE forward register to use (0-31) 
   // uint32_t vle_vreg = 0x00000101;
   //  uint32_t vle_vreg = 0x00000001;
-  // uint32_t vle_vreg = 0x00000101;
-  //  asm volatile("csrrw x0, 0x7c2, %0" :: "r"(vle_vreg));
+  uint32_t vle_vreg = 0x01010101;
+  asm volatile("csrrw x0, 0x7c2, %0" :: "r"(vle_vreg));
+
+
 
   // Start dump
   if (cid == 0)
@@ -91,7 +93,8 @@ int main() {
     timer = benchmark_get_cycle();
 
   // Call AXPY
-  faxpy_v64b(*a, x_int, y_int, dim_core);
+  // faxpy_v64b(*a, x_int, y_int, dim_core);
+  faxpy_v64b_unrl(*a, x_int, y_int, dim_core);
 
   // Wait for all cores to finish
   snrt_cluster_hw_barrier();

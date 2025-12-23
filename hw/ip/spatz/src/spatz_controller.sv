@@ -138,7 +138,7 @@ module spatz_controller
           end else begin
             vlefw_en_d = '1;
             FWVreg_d = spatz_req.rs1; 
-            if ($countones(spatz_req.rs1) == 2'd2) begin
+            if ($countones(spatz_req.rs1) >= 2'd2) begin
               cross_dep_d = 1'b1; // Count how many registers are being forwarded (yx)
             end 
           end
