@@ -330,7 +330,9 @@ module spatz_controller
 
     for (int unsigned port = 0; port < NrVregfilePorts; port++) begin
       // Enable the VRF port if the dependant instructions wrote in the previous cycle
-      sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
+      if (port != SB_VFU_VS2_RD || port != SB_VFU_VS1_RD || port != SB_VFU_VD_RD || port != SB_VFU_VD_WD) begin
+        sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
+      end
     end 
 
 
@@ -363,9 +365,9 @@ module spatz_controller
     // Grant access to VRF read ports for VFU when there is at least one valid data from VLSU (yx)
     if (vlefw_en_q) begin
       for (int unsigned port = 0; port < 3; port++) begin 
-        sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_trigger_d) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
+        sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_trigger_q) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
       end   
-      sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps | wrote_result_trigger_d) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining);
+      sb_enable_o[SB_VFU_VD_WD] = sb_enable_i[SB_VFU_VD_WD] && &(~scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps | wrote_result_trigger_q) && (!(|scoreboard_q[sb_id_i[SB_VFU_VD_WD]].deps) || !scoreboard_q[sb_id_i[SB_VFU_VD_WD]].prevent_chaining);
     end
 
     // enable the streaming ports depending on the scoreboard decisions (yx) 

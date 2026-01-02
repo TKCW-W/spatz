@@ -66,6 +66,8 @@ double fdotp_v64b(const double *a, const double *b, unsigned int avl) {
 
 // 64-bit dot-product: a * b
 // m8 allows only for partial register re-allocation with factor-2 unrolling
+// 64-bit dot-product: a * b
+// m8 allows only for partial register re-allocation with factor-2 unrolling
 double fdotp_v64b_m8_unrl(const double *a, const double *b, unsigned int avl) {
   const unsigned int orig_avl = avl;
   unsigned int vl;
@@ -75,17 +77,17 @@ double fdotp_v64b_m8_unrl(const double *a, const double *b, unsigned int avl) {
   // Stripmine and accumulate a partial reduced vector
   do {
     // Set the vl
-    asm volatile("vsetvli %0, %1, e64, m4, ta, ma" : "=r"(vl) : "r"(avl));
+    asm volatile("vsetvli %0, %1, e64, m8, ta, ma" : "=r"(vl) : "r"(avl));
 
     // Load chunk a and b
-    asm volatile("vle64.v v4,  (%0)" ::"r"(a));
-    asm volatile("vle64.v v8, (%0)" ::"r"(b));
+    asm volatile("vle64.v v8,  (%0)" ::"r"(a));
+    asm volatile("vle64.v v16, (%0)" ::"r"(b));
 
     // Multiply and accumulate
     if (avl == orig_avl) {
-      asm volatile("vfmul.vv v12, v4, v8");
+      asm volatile("vfmul.vv v24, v8, v16");
     } else {
-      asm volatile("vfmacc.vv v12, v4, v8");
+      asm volatile("vfmacc.vv v24, v8, v16");
     }
 
     // Bump pointers
@@ -96,40 +98,37 @@ double fdotp_v64b_m8_unrl(const double *a, const double *b, unsigned int avl) {
     if (avl <= 0) break;
 
     // Set the vl
-    asm volatile("vsetvli %0, %1, e64, m4, ta, ma" : "=r"(vl) : "r"(avl));
+    asm volatile("vsetvli %0, %1, e64, m8, ta, ma" : "=r"(vl) : "r"(avl));
 
     // Load chunk a and b
-    asm volatile("vle64.v v16, (%0)" ::"r"(a));
-    asm volatile("vle64.v v20, (%0)" ::"r"(b));
+    asm volatile("vle64.v v0, (%0)" ::"r"(a));
+    asm volatile("vle64.v v8, (%0)" ::"r"(b));
 
     // Multiply and accumulate
-    asm volatile("vfmacc.vv v24, v16, v20");
+    asm volatile("vfmacc.vv v24, v0, v8");
 
     // Bump pointers
     a += vl;
     b += vl;
     avl -= vl;
 
-    //if (avl <= 0) break;
+    if (avl <= 0) break;
 
     // Set the vl
-    //asm volatile("vsetvli %0, %1, e64, m8, ta, ma" : "=r"(vl) : "r"(avl));
+    asm volatile("vsetvli %0, %1, e64, m8, ta, ma" : "=r"(vl) : "r"(avl));
 
     // Load chunk a and b
-    //asm volatile("vle64.v v16, (%0)" ::"r"(a));
-    //asm volatile("vle64.v v0, (%0)" ::"r"(b));
+    asm volatile("vle64.v v16, (%0)" ::"r"(a));
+    asm volatile("vle64.v v0, (%0)" ::"r"(b));
 
     // Multiply and accumulate
-    //asm volatile("vfmacc.vv v24, v0, v16");
+    asm volatile("vfmacc.vv v24, v0, v16");
 
     // Bump pointers
-    //a += vl;
-    //b += vl;
-    //avl -= vl;
+    a += vl;
+    b += vl;
+    avl -= vl;
   } while (avl > 0);
-  // Combine the two accumulators
-  asm volatile("vsetvli %0, %1, e64, m4, ta, ma" : "=r"(vl) : "r"(orig_avl));
-  asm volatile("vfadd.vv v12, v12, v24");
 
   // Clean the accumulator
   asm volatile("vmv.s.x v0, zero");
@@ -140,6 +139,7 @@ double fdotp_v64b_m8_unrl(const double *a, const double *b, unsigned int avl) {
 
   return red;
 }
+
 
 // 64-bit dot-product: a * b (with loop unrolling, LMUL=4)
 double fdotp_v64b_unrolled(const double *a, const double *b, unsigned int avl) {

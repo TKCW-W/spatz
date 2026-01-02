@@ -38,7 +38,7 @@ module spatz_stream
     vrf_data_t [2:0]  staged_rdata_d, staged_rdata_q;
     logic      [2:0]  staged_rvalid_d, staged_rvalid_q;
 
-     logic      vlsu0_delivered, vlsu1_delivered, both_ready;
+    logic      vlsu0_delivered, vlsu1_delivered, both_ready;
 
     // Stream Buffers Update
     always_ff @(posedge clk_i or negedge rst_ni) begin
