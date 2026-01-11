@@ -45,6 +45,7 @@ int main() {
 
   // Reset timer
   unsigned int timer = (unsigned int)-1;
+  unsigned int local_timer0 = (unsigned int)-1;//used for single core vector performance measurement
 
   const unsigned int dim = dotp_l.M / num_cores; // remove /num_cores
 
@@ -79,10 +80,15 @@ int main() {
   // Start timer
   if (cid == 0)
     timer = benchmark_get_cycle();
+    local_timer0 = timer;
 
   // Calculate dotp
   double acc;
   acc = fdotp_v64b(a_int, b_int, dim);//QW
+
+  if (cid == 0)
+    local_timer0 = benchmark_get_cycle() - local_timer0;
+
   result[cid] = acc;
 
   // Wait for all cores to finish
@@ -109,13 +115,18 @@ int main() {
   // Check and display results
   if (cid == 0) {
     long unsigned int performance = 1000 * 2 * dotp_l.M / timer;
+    long unsigned int performance_single = 1000 * 2 * dim / local_timer0;
     long unsigned int utilization =
         performance / (2 * num_cores * SNRT_NFPU_PER_CORE);
+    long unsigned int utilization_single =
+        performance_single / (2 * SNRT_NFPU_PER_CORE);
 
     printf("\n----- (%d) dp fdotp -----\n", dotp_l.M);
     printf("The execution took %u cycles.\n", timer);
     printf("The performance is %ld OP/1000cycle (%ld%%o utilization).\n",
            performance, utilization);
+    printf("The performance of single core is %ld OP/1000cycle (%ld%%o utilization).\n",
+          performance_single, utilization_single);
   }
 
   if (cid == 0)

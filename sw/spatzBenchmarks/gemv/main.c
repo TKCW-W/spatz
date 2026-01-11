@@ -55,6 +55,7 @@ int main() {
 
   // Reset timer
   unsigned int timer = (unsigned int)-1;
+  unsigned int local_timer0 = (unsigned int)-1;
   const unsigned int m_core = gemv_l.M / num_cores;
 
   // Allocate the matrices
@@ -88,6 +89,7 @@ int main() {
   // Start timer
   if (cid == 0)
     timer = benchmark_get_cycle();
+    local_timer0 = timer;
 
   // Calculate gemv
   if (sizeof(T) == 8)
@@ -96,6 +98,9 @@ int main() {
     gemv_v32b_m4(a_core, b, result_core, gemv_l.M, m_core, gemv_l.N);
   else
     gemv_v16b_m4(a_core, b, result_core, gemv_l.M, m_core, gemv_l.N);
+
+  if (cid == 0)
+    local_timer0 = benchmark_get_cycle() - local_timer0;
 
   // Wait for all cores to finish
   snrt_cluster_hw_barrier();
@@ -111,13 +116,18 @@ int main() {
   // Check and display results
   if (cid == 0) {
     long unsigned int performance = 1000 * 2 * gemv_l.M * gemv_l.N / timer;
+    long unsigned int performance_single = 1000 * 2 * m_core * gemv_l.N / local_timer0;
     long unsigned int utilization =
         performance / (2 * num_cores * SNRT_NFPU_PER_CORE * (8 / sizeof(T)));
+    long unsigned int utilization_single =
+        performance_single / (2 * SNRT_NFPU_PER_CORE * (8 / sizeof(T)));
 
     printf("\n----- (%d x %d) x (%d x 1) gemv -----\n", gemv_l.M, gemv_l.N, gemv_l.N);
     printf("The execution took %u cycles.\n", timer);
     printf("The performance is %ld OP/1000cycle (%ld%%o utilization).\n",
            performance, utilization);
+    printf("The performance of single core is %ld OP/1000cycle (%ld%%o utilization).\n",
+          performance_single, utilization_single);
   }
 
   if (cid == 0) {

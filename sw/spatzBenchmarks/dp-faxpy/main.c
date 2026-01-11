@@ -45,6 +45,7 @@ int main() {
 
   // Reset timer
   unsigned int timer = (unsigned int)-1;
+  unsigned int local_timer0 = (unsigned int)-1;
 
   const unsigned int dim = axpy_l.M;
   const unsigned int dim_core = dim / num_cores;
@@ -82,9 +83,13 @@ int main() {
   // Start timer
   if (cid == 0)
     timer = benchmark_get_cycle();
+    local_timer0 = timer;
 
   // Call AXPY
   faxpy_v64b(*a, x_int, y_int, dim_core);
+
+  if (cid == 0)
+    local_timer0 = benchmark_get_cycle() - local_timer0;
 
   // Wait for all cores to finish
   snrt_cluster_hw_barrier();
@@ -100,13 +105,18 @@ int main() {
   // Check and display results
   if (cid == 0) {
     long unsigned int performance = 1000 * 2 * dim / timer;
+    long unsigned int performance_single = 1000 * 2 * dim_core / local_timer0;
     long unsigned int utilization =
         performance / (2 * num_cores * SNRT_NFPU_PER_CORE);
+    long unsigned int utilization_single =
+        performance_single / (2 * SNRT_NFPU_PER_CORE);
 
     printf("\n----- (%d) axpy -----\n", dim);
     printf("The execution took %u cycles.\n", timer);
     printf("The performance is %ld OP/1000cycle (%ld%%o utilization).\n",
            performance, utilization);
+    printf("The performance of single core is %ld OP/1000cycle (%ld%%o utilization).\n",
+          performance_single, utilization_single);
   }
 
   if (cid == 0) {
