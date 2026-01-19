@@ -86,7 +86,7 @@ int main() {
     local_timer0 = timer;
 
   // Call AXPY
-  faxpy_v64b(*a, x_int, y_int, dim_core);
+  faxpy_v64b_unrl(*a, x_int, y_int, dim_core);
 
   if (cid == 0)
     local_timer0 = benchmark_get_cycle() - local_timer0;
